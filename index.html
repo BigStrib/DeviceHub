@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Device Hub</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Main Canvas -->
+    <div id="canvas" class="canvas"></div>
+
+    <!-- Floating Toolbar -->
+    <div id="toolbar" class="toolbar">
+        <div class="toolbar-group">
+            <button id="add-source-btn" class="toolbar-btn primary" title="Add Source">
+                <i class="fas fa-plus"></i>
+            </button>
+        </div>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-group">
+            <button id="add-device-btn" class="toolbar-btn" title="Connect Device">
+                <i class="fas fa-link"></i>
+            </button>
+            <button id="clear-all-btn" class="toolbar-btn" title="Clear All">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+        </div>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-group">
+            <button id="fullscreen-btn" class="toolbar-btn" title="Fullscreen">
+                <i class="fas fa-expand"></i>
+            </button>
+            <button id="settings-btn" class="toolbar-btn" title="Settings">
+                <i class="fas fa-cog"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Room Badge -->
+    <div id="room-badge" class="room-badge">
+        <span id="room-id">------</span>
+        <button id="copy-room-btn" class="badge-btn" title="Copy">
+            <i class="fas fa-copy"></i>
+        </button>
+    </div>
+
+    <!-- Status Badge -->
+    <div id="status-badge" class="status-badge">
+        <span class="status-dot"></span>
+        <span id="connection-count">0</span>
+    </div>
+
+    <!-- Add Source Modal -->
+    <div id="source-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Source</h2>
+                <button class="modal-close" data-close="source-modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="source-grid">
+                    <button class="source-option" data-source="camera">
+                        <div class="source-icon"><i class="fas fa-video"></i></div>
+                        <span>Camera</span>
+                    </button>
+                    <button class="source-option" data-source="window">
+                        <div class="source-icon"><i class="fas fa-window-maximize"></i></div>
+                        <span>Window</span>
+                    </button>
+                </div>
+
+                <!-- Camera Options -->
+                <div id="camera-options" class="source-options hidden">
+                    <h3>Camera Settings</h3>
+                    <div class="option-row">
+                        <label>Camera</label>
+                        <select id="camera-select"></select>
+                    </div>
+                    <div class="option-row">
+                        <label>Microphone</label>
+                        <select id="audio-select"></select>
+                    </div>
+                    <div class="option-row">
+                        <label>Include Audio</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="include-audio" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="option-row">
+                        <label>Mirror Video</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="mirror-video" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <button id="start-camera-btn" class="action-btn">
+                        <i class="fas fa-play"></i> Start Camera
+                    </button>
+                </div>
+
+                <!-- Window Options -->
+                <div id="window-options" class="source-options hidden">
+                    <h3>Window Settings</h3>
+                    <div class="option-row">
+                        <label>Capture Audio</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="window-audio">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <button id="start-window-btn" class="action-btn">
+                        <i class="fas fa-play"></i> Share Window
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connect Device Modal -->
+    <div id="connect-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Connect Device</h2>
+                <button class="modal-close" data-close="connect-modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="connect-section">
+                    <div class="qr-container" id="qr-container"></div>
+                    <p class="connect-info">Scan with another device</p>
+                </div>
+                <div class="connect-section">
+                    <div class="link-row">
+                        <input type="text" id="share-link" readonly>
+                        <button id="copy-link-btn" class="icon-btn">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="connect-divider"><span>or join a room</span></div>
+                <div class="connect-section">
+                    <div class="join-row">
+                        <input type="text" id="join-input" placeholder="Enter Room ID">
+                        <button id="join-btn" class="action-btn small">Join</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="modal-close" data-close="settings-modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-group">
+                    <h3>Appearance</h3>
+                    <div class="option-row">
+                        <label>Background Color</label>
+                        <input type="color" id="bg-color" value="#0a0a0a">
+                    </div>
+                    <div class="option-row">
+                        <label>Show Labels</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="show-labels" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="option-row">
+                        <label>Show Borders</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="show-borders" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="option-row">
+                        <label>Rounded Corners</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="rounded-corners" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="settings-group">
+                    <h3>Video Quality</h3>
+                    <div class="option-row">
+                        <label>Resolution</label>
+                        <select id="resolution-select">
+                            <option value="480">480p</option>
+                            <option value="720" selected>720p</option>
+                            <option value="1080">1080p</option>
+                            <option value="1440">1440p</option>
+                            <option value="2160">4K</option>
+                        </select>
+                    </div>
+                    <div class="option-row">
+                        <label>Frame Rate</label>
+                        <select id="framerate-select">
+                            <option value="15">15 fps</option>
+                            <option value="30" selected>30 fps</option>
+                            <option value="60">60 fps</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="settings-group">
+                    <h3>Behavior</h3>
+                    <div class="option-row">
+                        <label>Lock Aspect Ratio</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="lock-ratio" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirm-modal" class="modal">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h2>Confirm</h2>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-message">Are you sure?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn secondary" data-close="confirm-modal">Cancel</button>
+                <button id="confirm-btn" class="action-btn danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu hidden">
+        <ul>
+            <li data-action="fullscreen"><i class="fas fa-expand"></i> Fullscreen</li>
+            <li data-action="pip"><i class="fas fa-external-link-alt"></i> Picture in Picture</li>
+            <li data-action="duplicate"><i class="fas fa-clone"></i> Duplicate</li>
+            <li class="divider"></li>
+            <li data-action="mute"><i class="fas fa-volume-up"></i> Toggle Audio</li>
+            <li data-action="mirror"><i class="fas fa-arrows-alt-h"></i> Toggle Mirror</li>
+            <li class="divider"></li>
+            <li data-action="fit"><i class="fas fa-compress-arrows-alt"></i> Fit to Content</li>
+            <li data-action="reset"><i class="fas fa-undo"></i> Reset Size</li>
+            <li data-action="front"><i class="fas fa-layer-group"></i> Bring to Front</li>
+            <li class="divider"></li>
+            <li data-action="remove" class="danger"><i class="fas fa-trash"></i> Remove</li>
+        </ul>
+    </div>
+
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
