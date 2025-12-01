@@ -100,7 +100,6 @@ const Utils = {
     }
 };
 
-// -------------------- Toasts --------------------
 const Toast = {
     show(msg, type = 'info', dur = 3000) {
         const cont = $('toast-container');
@@ -153,6 +152,10 @@ const Media = {
         }
     },
     async getWindow() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+            Toast.warning('Window/screen sharing not supported on this device');
+            return null;
+        }
         try {
             return await navigator.mediaDevices.getDisplayMedia({
                 video: { cursor: 'always' },
@@ -160,7 +163,7 @@ const Media = {
             });
         } catch (err) {
             if (err.name !== 'AbortError') {
-                console.error('Window error:', err);
+                console.error('Display error:', err);
                 Toast.error('Cannot share window');
             }
             return null;
@@ -180,83 +183,53 @@ const SettingsUI = {
         if (canvas) canvas.style.background = 'var(--bg-color)';
     },
     save() {
-        try {
-            localStorage.setItem('dh-settings', JSON.stringify(State.settings));
-        } catch {}
+        try { localStorage.setItem('dh-settings', JSON.stringify(State.settings)); } catch {}
+    },
+    apply() {
+        State.videoBoxes.forEach(box => this.applyToBox(box.el));
+    },
+    applyToBox(el) {
+        el.classList.toggle('no-border', !State.settings.showBorders);
+        el.classList.toggle('no-radius', !State.settings.roundedCorners);
+        el.classList.toggle('hide-labels', !State.settings.showLabels);
     },
     init() {
-        const p = $('settings-panel');
-        const open = $('host-settings-btn');
+        const panel = $('settings-panel');
+        const open  = $('host-settings-btn');
         const close = $('settings-close-btn');
-        if (!p || !open || !close) return;
+        if (!panel || !open || !close) return;
+
+        const sb = $('set-show-borders');
+        const sl = $('set-show-labels');
+        const rc = $('set-rounded-corners');
+        const lr = $('set-lock-ratio');
+        const bg = $('set-bg-color');
 
         const s = State.settings;
+        sb.checked = s.showBorders;
+        sl.checked = s.showLabels;
+        rc.checked = s.roundedCorners;
+        lr.checked = s.lockRatio;
+        bg.value   = s.bgColor;
 
-        const showBorders = $('set-show-borders');
-        const showLabels  = $('set-show-labels');
-        const rounded     = $('set-rounded-corners');
-        const lockRatio   = $('set-lock-ratio');
-        const bgColor     = $('set-bg-color');
+        open.onclick = () => panel.classList.toggle('hidden');
+        close.onclick = () => panel.classList.add('hidden');
 
-        showBorders.checked = s.showBorders;
-        showLabels.checked  = s.showLabels;
-        rounded.checked     = s.roundedCorners;
-        lockRatio.checked   = s.lockRatio;
-        bgColor.value       = s.bgColor;
-
-        open.onclick = () => p.classList.toggle('hidden');
-        close.onclick = () => p.classList.add('hidden');
-
-        showBorders.onchange = () => {
-            s.showBorders = showBorders.checked;
-            this.apply();
-            this.save();
-        };
-        showLabels.onchange = () => {
-            s.showLabels = showLabels.checked;
-            this.apply();
-            this.save();
-        };
-        rounded.onchange = () => {
-            s.roundedCorners = rounded.checked;
-            this.apply();
-            this.save();
-        };
-        lockRatio.onchange = () => {
-            s.lockRatio = lockRatio.checked;
-            this.save();
-        };
-        bgColor.oninput = () => {
-            s.bgColor = bgColor.value;
+        sb.onchange = () => { s.showBorders = sb.checked; this.apply(); this.save(); };
+        sl.onchange = () => { s.showLabels  = sl.checked; this.apply(); this.save(); };
+        rc.onchange = () => { s.roundedCorners = rc.checked; this.apply(); this.save(); };
+        lr.onchange = () => { s.lockRatio = lr.checked; this.save(); };
+        bg.oninput  = () => {
+            s.bgColor = bg.value;
             document.documentElement.style.setProperty('--bg-color', s.bgColor);
             const canvas = $('canvas');
             if (canvas) canvas.style.background = 'var(--bg-color)';
             this.save();
         };
-
-        this.apply();
-    },
-    apply() {
-        State.videoBoxes.forEach(box => {
-            const el = box.el;
-            if (!State.settings.showBorders) el.classList.add('no-border');
-            else el.classList.remove('no-border');
-
-            if (!State.settings.roundedCorners) el.classList.add('no-radius');
-            else el.classList.remove('no-radius');
-
-            if (!State.settings.showLabels) el.classList.add('hide-labels');
-            else el.classList.remove('hide-labels');
-        });
-    },
-    applyToBox(el) {
-        if (!State.settings.showBorders) el.classList.add('no-border');
-        if (!State.settings.roundedCorners) el.classList.add('no-radius');
-        if (!State.settings.showLabels) el.classList.add('hide-labels');
     }
 };
 
-// -------------------- VideoBox (Host canvas tiles) --------------------
+// -------------------- Video Boxes --------------------
 const VideoBox = {
     create(stream, opts = {}) {
         const id = 'box-' + (++State.boxCounter);
@@ -295,15 +268,15 @@ const VideoBox = {
         video.srcObject = stream;
 
         const canvas = $('canvas');
-        const rect = canvas.getBoundingClientRect();
-        const w = opts.width || CONFIG.defaultSize.width;
+        const rect   = canvas.getBoundingClientRect();
+        const w = opts.width  || CONFIG.defaultSize.width;
         const h = opts.height || CONFIG.defaultSize.height;
         const x = opts.x ?? Math.max(10, (rect.width  - w) / 2);
         const y = opts.y ?? Math.max(10, (rect.height - h) / 2);
 
-        box.style.left = x + 'px';
-        box.style.top = y + 'px';
-        box.style.width = w + 'px';
+        box.style.left   = x + 'px';
+        box.style.top    = y + 'px';
+        box.style.width  = w + 'px';
         box.style.height = h + 'px';
 
         canvas.appendChild(box);
@@ -324,18 +297,18 @@ const VideoBox = {
         const data = State.videoBoxes.get(id);
         if (!data) return;
 
-        // Controls
+        // toolbar controls on tile
         box.querySelectorAll('.video-control-btn').forEach(btn => {
-            btn.onclick = (e) => {
+            btn.onclick = e => {
                 e.stopPropagation();
-                const action = btn.dataset.action;
-                if (action === 'mute') this.toggleMute(id);
-                if (action === 'pip') this.togglePip(id);
-                if (action === 'close') this.remove(id);
+                const act = btn.dataset.action;
+                if (act === 'mute') this.toggleMute(id);
+                if (act === 'pip')  this.togglePip(id);
+                if (act === 'close') this.remove(id);
             };
         });
 
-        // Move
+        // move
         const startMove = (e) => {
             e.preventDefault();
             this.activate(id);
@@ -358,19 +331,22 @@ const VideoBox = {
         box.querySelector('.move-handle').addEventListener('mousedown', startMove);
         box.querySelector('.move-handle').addEventListener('touchstart', startMove, { passive: false });
 
-        // Drag from video area
         box.addEventListener('mousedown', e => {
-            if (!e.target.closest('.video-control-btn') && !e.target.closest('.resize-handle') && !e.target.closest('.move-handle')) {
+            if (!e.target.closest('.video-control-btn') &&
+                !e.target.closest('.resize-handle') &&
+                !e.target.closest('.move-handle')) {
                 startMove(e);
             }
         });
         box.addEventListener('touchstart', e => {
-            if (!e.target.closest('.video-control-btn') && !e.target.closest('.resize-handle') && !e.target.closest('.move-handle')) {
+            if (!e.target.closest('.video-control-btn') &&
+                !e.target.closest('.resize-handle') &&
+                !e.target.closest('.move-handle')) {
                 startMove(e);
             }
         }, { passive: false });
 
-        // Resize
+        // resize
         box.querySelectorAll('.resize-handle').forEach(handle => {
             const startResize = (e) => {
                 e.preventDefault();
@@ -411,7 +387,7 @@ const VideoBox = {
             handle.addEventListener('touchstart', startResize, { passive: false });
         });
 
-        // Context menu
+        // context menu
         box.addEventListener('contextmenu', e => {
             e.preventDefault();
             const menu = $('context-menu');
@@ -419,8 +395,8 @@ const VideoBox = {
             menu.style.left = Math.min(e.clientX, window.innerWidth - 200) + 'px';
             menu.style.top  = Math.min(e.clientY, window.innerHeight - 250) + 'px';
             menu.classList.remove('hidden');
-            this.activate(id);
             ContextMenu.boxId = id;
+            this.activate(id);
         });
     },
 
@@ -437,13 +413,16 @@ const VideoBox = {
         const data = State.videoBoxes.get(int.id);
         if (!data) return;
         const p = Utils.getPointer(e);
-        const canvasRect = $('canvas').getBoundingClientRect();
+        const rect = $('canvas').getBoundingClientRect();
         const w = data.el.offsetWidth;
         const h = data.el.offsetHeight;
+
         let x = int.origLeft + (p.x - int.startX);
         let y = int.origTop  + (p.y - int.startY);
-        x = Utils.clamp(x, 0, canvasRect.width  - w);
-        y = Utils.clamp(y, 0, canvasRect.height - h);
+
+        x = Utils.clamp(x, 0, rect.width  - w);
+        y = Utils.clamp(y, 0, rect.height - h);
+
         data.el.style.left = x + 'px';
         data.el.style.top  = y + 'px';
     },
@@ -470,10 +449,11 @@ const VideoBox = {
         const p = Utils.getPointer(e);
         const dx = p.x - int.startX;
         const dy = p.y - int.startY;
+
+        let { origLeft: left, origTop: top, origW: w, origH: h, ratio, dir } = int;
         const minW = CONFIG.minSize.width;
         const minH = CONFIG.minSize.height;
         const lock = State.settings.lockRatio;
-        let { origLeft: left, origTop: top, origW: w, origH: h, ratio, dir } = int;
 
         switch (dir) {
             case 'se': w = Math.max(minW, int.origW + dx); h = lock ? w / ratio : Math.max(minH, int.origH + dy); break;
@@ -486,9 +466,10 @@ const VideoBox = {
             case 'n':  h = Math.max(minH, int.origH - dy); top = int.origTop + int.origH - h; if (lock) w = h * ratio; break;
         }
 
-        const canvasRect = $('canvas').getBoundingClientRect();
-        left = Utils.clamp(left, 0, canvasRect.width  - w);
-        top  = Utils.clamp(top, 0, canvasRect.height - h);
+        const rect = $('canvas').getBoundingClientRect();
+        left = Utils.clamp(left, 0, rect.width  - w);
+        top  = Utils.clamp(top, 0, rect.height - h);
+
         data.el.style.left = left + 'px';
         data.el.style.top  = top  + 'px';
         data.el.style.width  = w  + 'px';
@@ -505,7 +486,7 @@ const VideoBox = {
         document.removeEventListener('mousemove', VideoBox.onResize);
         document.removeEventListener('mouseup', VideoBox.endResize);
         document.removeEventListener('touchmove', VideoBox.onResize);
-        document.removeEventListener('touchend',  VideoBox.endResize);
+        document.removeEventListener('touchend', VideoBox.endResize);
     },
 
     toggleMute(id) {
@@ -531,8 +512,32 @@ const VideoBox = {
                 await data.video.requestPictureInPicture();
             }
         } catch {
-            Toast.warning('Picture-in-Picture not supported here');
+            Toast.warning('Picture-in-Picture not supported on this browser');
         }
+    },
+
+    toggleMirror(id) {
+        const data = State.videoBoxes.get(id);
+        if (!data) return;
+        data.el.classList.toggle('mirror');
+    },
+
+    resetSize(id) {
+        const data = State.videoBoxes.get(id);
+        if (!data) return;
+        data.el.style.width  = CONFIG.defaultSize.width  + 'px';
+        data.el.style.height = CONFIG.defaultSize.height + 'px';
+    },
+
+    bringFront(id) {
+        const data = State.videoBoxes.get(id);
+        if (!data) return;
+        let maxZ = 10;
+        State.videoBoxes.forEach(b => {
+            const z = parseInt(b.el.style.zIndex || 10, 10);
+            if (z > maxZ) maxZ = z;
+        });
+        data.el.style.zIndex = maxZ + 1;
     },
 
     remove(id) {
@@ -543,31 +548,25 @@ const VideoBox = {
     }
 };
 
-// -------------------- Context Menu --------------------
 const ContextMenu = { boxId: null };
 
 function bindContextMenu() {
     const menu = $('context-menu');
     document.addEventListener('click', e => {
-        if (!e.target.closest('#context-menu')) {
-            menu.classList.add('hidden');
-        }
+        if (!e.target.closest('#context-menu')) menu.classList.add('hidden');
     });
     menu.querySelectorAll('[data-action]').forEach(item => {
         item.onclick = () => {
             const id = ContextMenu.boxId;
-            if (!id) {
-                menu.classList.add('hidden');
-                return;
-            }
+            if (!id) { menu.classList.add('hidden'); return; }
             const act = item.dataset.action;
             if (act === 'fullscreen') VideoBox.fullscreen?.(id);
             if (act === 'pip')        VideoBox.togglePip(id);
             if (act === 'duplicate')  VideoBox.duplicate?.(id);
             if (act === 'mute')       VideoBox.toggleMute(id);
-            if (act === 'mirror')     VideoBox.toggleMirror?.(id);
-            if (act === 'reset')      VideoBox.resetSize?.(id);
-            if (act === 'front')      VideoBox.bringFront?.(id);
+            if (act === 'mirror')     VideoBox.toggleMirror(id);
+            if (act === 'reset')      VideoBox.resetSize(id);
+            if (act === 'front')      VideoBox.bringFront(id);
             if (act === 'remove')     VideoBox.remove(id);
             menu.classList.add('hidden');
         };
@@ -589,18 +588,14 @@ const ConnectionManager = {
             State.peer.on('open', id => {
                 clearTimeout(timer);
                 State.peerId = id;
-                console.log('Host ready:', id);
                 resolve();
             });
 
             State.peer.on('error', err => {
                 clearTimeout(timer);
                 console.error('Host error:', err);
-                if (err.type === 'unavailable-id') {
-                    reject(new Error('This room code is already in use'));
-                } else {
-                    reject(new Error('Unable to start host'));
-                }
+                if (err.type === 'unavailable-id') reject(new Error('This room code is already in use'));
+                else reject(new Error('Unable to start host'));
             });
 
             State.peer.on('connection', conn => {
@@ -630,7 +625,6 @@ const ConnectionManager = {
                     HostPanelUI.render();
                     Toast.info('New source submitted');
                 });
-                call.on('close', () => {});
             });
         });
     },
@@ -645,7 +639,6 @@ const ConnectionManager = {
             State.peer.on('open', id => {
                 clearTimeout(timer);
                 State.peerId = id;
-                console.log('Guest ready:', id);
                 resolve();
             });
             State.peer.on('error', err => {
@@ -686,29 +679,29 @@ const ConnectionManager = {
 
     handleGuestMessage(peerId, data) {
         if (!data || !data.type) return;
+        const conn = State.connections.get(peerId);
 
         switch (data.type) {
-            case 'guest-info': {
-                const conn = State.connections.get(peerId);
+            case 'guest-info':
                 if (conn) {
                     conn.info = data.deviceInfo;
                     HostPanelUI.render();
                 }
                 break;
-            }
-            case 'source-ended': {
-                const srcId = data.sourceId;
-                const src = State.pendingSources.get(srcId);
-                if (src) {
-                    src.call?.close();
-                    State.pendingSources.delete(srcId);
-                    State.videoBoxes.forEach((box, boxId) => {
-                        if (box.sourceId === srcId) VideoBox.remove(boxId);
-                    });
-                    HostPanelUI.render();
+            case 'source-ended':
+                {
+                    const srcId = data.sourceId;
+                    const src = State.pendingSources.get(srcId);
+                    if (src) {
+                        src.call?.close();
+                        State.pendingSources.delete(srcId);
+                        State.videoBoxes.forEach((box, boxId) => {
+                            if (box.sourceId === srcId) VideoBox.remove(boxId);
+                        });
+                        HostPanelUI.render();
+                    }
                 }
                 break;
-            }
         }
     },
 
@@ -762,10 +755,10 @@ const ConnectionManager = {
 // -------------------- Host Panel UI --------------------
 const HostPanelUI = {
     init() {
-        const panel  = $('host-panel');
-        const open1  = $('open-host-panel-btn');
-        const open2  = $('open-host-panel-btn-2');
-        const close  = $('host-panel-close');
+        const panel = $('host-panel');
+        const open1 = $('open-host-panel-btn');
+        const open2 = $('open-host-panel-btn-2');
+        const close = $('host-panel-close');
 
         const toggle = () => {
             panel.classList.toggle('hidden');
@@ -808,8 +801,7 @@ const HostPanelUI = {
                     <i class="fas fa-video-slash"></i>
                     <p>No sources available</p>
                     <span>Ask devices to join and share camera/window.</span>
-                </div>
-            `;
+                </div>`;
             return;
         }
         cont.innerHTML = '';
@@ -885,12 +877,11 @@ const HostPanelUI = {
                     <i class="fas fa-plug"></i>
                     <p>No devices connected</p>
                     <span>Share your room code with other devices.</span>
-                </div>
-            `;
+                </div>`;
             return;
         }
         cont.innerHTML = '';
-        State.connections.forEach((conn, peerId) => {
+        State.connections.forEach((conn, pid) => {
             const card = document.createElement('div');
             card.className = 'device-card';
             card.innerHTML = `
@@ -899,11 +890,13 @@ const HostPanelUI = {
                 </div>
                 <div class="device-info">
                     <div class="device-name">${conn.info?.type || 'Device'}</div>
-                    <div class="device-meta">${peerId}</div>
+                    <div class="device-meta">${pid}</div>
                 </div>
-                <button class="device-kick" title="Disconnect"><i class="fas fa-times"></i></button>
+                <button class="device-kick" title="Disconnect">
+                    <i class="fas fa-times"></i>
+                </button>
             `;
-            card.querySelector('.device-kick').onclick = () => ConnectionManager.kickPeer(peerId);
+            card.querySelector('.device-kick').onclick = () => ConnectionManager.kickPeer(pid);
             cont.appendChild(card);
         });
     }
@@ -915,9 +908,21 @@ const GuestUI = {
         document.body.classList.add('guest-mode');
         $('guest-screen').classList.remove('hidden');
         $('guest-room-code').textContent = Utils.formatRoomId(State.roomId);
-        $('share-camera-btn').onclick = () => this.share('camera');
-        $('share-window-btn').onclick = () => this.share('window');
-        $('share-both-btn').onclick   = () => this.shareBoth();
+
+        const cameraBtn = $('share-camera-btn');
+        const windowBtn = $('share-window-btn');
+        const bothBtn   = $('share-both-btn');
+
+        // Hide window sharing options if not supported
+        const canShareWindow = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+        if (!canShareWindow) {
+            windowBtn.style.display = 'none';
+            bothBtn.style.display   = 'none';
+        }
+
+        cameraBtn.onclick = () => this.share('camera');
+        windowBtn.onclick = () => this.share('window');
+        bothBtn.onclick   = () => this.shareBoth();
     },
     setConnecting() {
         $('guest-status').classList.remove('hidden');
@@ -990,7 +995,6 @@ const GuestUI = {
         title.className = 'my-sources-title';
         title.textContent = 'Your shared sources';
         cont.appendChild(title);
-
         State.localSources.forEach((s, id) => {
             const div = document.createElement('div');
             div.className = 'my-source';
@@ -1051,6 +1055,7 @@ const LoginUI = {
             }
             State.roomId = clean;
             State.isHost = true;
+
             $('login-screen').classList.add('hidden');
             $('host-screen').classList.remove('hidden');
             $('host-room-display').textContent = Utils.formatRoomId(clean);
@@ -1079,8 +1084,8 @@ const LoginUI = {
             }
             State.roomId = clean;
             State.isHost = false;
+
             $('login-screen').classList.add('hidden');
-            $('guest-screen').classList.remove('hidden');
             GuestUI.init();
             GuestUI.setConnecting();
 
@@ -1097,7 +1102,7 @@ const LoginUI = {
     }
 };
 
-// -------------------- Host UI Extras --------------------
+// -------------------- Host UI Helpers --------------------
 function bindHostUI() {
     const copyBtn = $('copy-room-btn');
     const fullBtn = $('host-fullscreen-btn');
@@ -1139,19 +1144,24 @@ function bindHostUI() {
     }
 
     if (addWin) {
-        addWin.onclick = async () => {
-            const stream = await Media.getWindow();
-            if (stream) {
-                const id = VideoBox.create(stream, {
-                    label: 'My Window',
-                    icon: 'fa-window-maximize',
-                    muted: true
-                });
-                stream.getTracks().forEach(t => {
-                    t.onended = () => VideoBox.remove(id);
-                });
-            }
-        };
+        const canShareWindow = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+        if (!canShareWindow) {
+            addWin.style.display = 'none';
+        } else {
+            addWin.onclick = async () => {
+                const stream = await Media.getWindow();
+                if (stream) {
+                    const id = VideoBox.create(stream, {
+                        label: 'My Window',
+                        icon: 'fa-window-maximize',
+                        muted: true
+                    });
+                    stream.getTracks().forEach(t => {
+                        t.onended = () => VideoBox.remove(id);
+                    });
+                }
+            };
+        }
     }
 
     if (endBtn) {
@@ -1161,23 +1171,21 @@ function bindHostUI() {
 
 // -------------------- Init --------------------
 function init() {
-    // Load saved settings & apply background
     SettingsUI.load();
-    const canvas = $('canvas');
-    if (canvas) canvas.style.background = 'var(--bg-color)';
-
     LoginUI.init();
     bindHostUI();
     bindContextMenu();
     SettingsUI.init();
 
-    // If room provided in URL, prefill join field
+    // pre-fill join if ?room= param is present
     const params = new URLSearchParams(location.search);
     const roomParam = params.get('room');
     if (roomParam) {
         const clean = Utils.cleanRoomId(roomParam);
         if (clean) $('guest-room-input').value = Utils.formatRoomId(clean);
     }
+
+    // For guests, we also hide host UI via CSS (body.guest-mode)
 }
 
 document.readyState === 'loading'
