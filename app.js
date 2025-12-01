@@ -27,8 +27,8 @@ const State = {
     hostConnection: null,
     connections: new Map(),     // host: guestId -> { data, info }
     pendingSources: new Map(),  // host: sourceId -> {stream, type, peerId, deviceInfo, call}
-    localSources: new Map(),    // guest: sourceId -> {stream, type, status}
-    videoBoxes: new Map(),      // host: boxId -> {el, video, stream, sourceId, peerId}
+    localSources: new Map(),    // guest: sourceId -> {stream, type, facing, status}
+    videoBoxes: new Map(),      // host: boxId -> {el, video, stream, sourceId, peerId, hostType}
     boxCounter: 0,
     interaction: null,
     settings: {
@@ -39,6 +39,11 @@ const State = {
         roundedCorners: true,
         lockRatio: true,
         bgColor: '#050509'
+    },
+    guestCameras: {
+        frontId: null,
+        backId: null,
+        anyId: null
     }
 };
 
@@ -52,20 +57,16 @@ const Utils = {
         for (let i = 0; i < len; i++) r += chars[Math.floor(Math.random() * chars.length)];
         return r;
     },
-    genRoomId() {
-        return this.genId(3) + this.genId(3);
-    },
+    genRoomId() { return this.genId(3) + this.genId(3); },
     cleanRoomId(id) {
         return id.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
     },
     formatRoomId(id) {
         const c = this.cleanRoomId(id);
         if (c.length <= 3) return c;
-        return c.slice(0,3) + '-' + c.slice(3);
+        return c.slice(0, 3) + '-' + c.slice(3);
     },
-    roomToPeerId(roomId) {
-        return 'devhub-' + this.cleanRoomId(roomId);
-    },
+    roomToPeerId(roomId) { return 'devhub-' + this.cleanRoomId(roomId); },
     async copy(text) {
         try {
             await navigator.clipboard.writeText(text);
@@ -100,6 +101,7 @@ const Utils = {
     }
 };
 
+// -------------------- Toasts --------------------
 const Toast = {
     show(msg, type = 'info', dur = 3000) {
         const cont = $('toast-container');
@@ -134,17 +136,22 @@ const Toast = {
 
 // -------------------- Media --------------------
 const Media = {
-    async getCamera() {
+    async getCamera(constraints = {}) {
         const res = CONFIG.resolutions[State.settings.resolution] || CONFIG.resolutions['720'];
+        const base = {
+            video: {
+                width: { ideal: res.width },
+                height: { ideal: res.height },
+                frameRate: { ideal: State.settings.frameRate }
+            },
+            audio: true
+        };
+        const merged = { ...base };
+        if (constraints.video) merged.video = { ...base.video, ...constraints.video };
+        if (constraints.audio !== undefined) merged.audio = constraints.audio;
+
         try {
-            return await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: res.width },
-                    height: { ideal: res.height },
-                    frameRate: { ideal: State.settings.frameRate }
-                },
-                audio: true
-            });
+            return await navigator.mediaDevices.getUserMedia(merged);
         } catch (err) {
             console.error('Camera error:', err);
             Toast.error('Cannot access camera/mic');
@@ -168,10 +175,21 @@ const Media = {
             }
             return null;
         }
+    },
+    async enumerateDevices() {
+        try {
+            const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            s.getTracks().forEach(t => t.stop());
+        } catch {}
+        try {
+            return await navigator.mediaDevices.enumerateDevices();
+        } catch {
+            return [];
+        }
     }
 };
 
-// -------------------- Settings UI --------------------
+// -------------------- Settings --------------------
 const SettingsUI = {
     load() {
         try {
@@ -185,13 +203,13 @@ const SettingsUI = {
     save() {
         try { localStorage.setItem('dh-settings', JSON.stringify(State.settings)); } catch {}
     },
-    apply() {
-        State.videoBoxes.forEach(box => this.applyToBox(box.el));
-    },
     applyToBox(el) {
         el.classList.toggle('no-border', !State.settings.showBorders);
         el.classList.toggle('no-radius', !State.settings.roundedCorners);
         el.classList.toggle('hide-labels', !State.settings.showLabels);
+    },
+    applyAll() {
+        State.videoBoxes.forEach(b => this.applyToBox(b.el));
     },
     init() {
         const panel = $('settings-panel');
@@ -212,12 +230,12 @@ const SettingsUI = {
         lr.checked = s.lockRatio;
         bg.value   = s.bgColor;
 
-        open.onclick = () => panel.classList.toggle('hidden');
+        open.onclick  = () => panel.classList.toggle('hidden');
         close.onclick = () => panel.classList.add('hidden');
 
-        sb.onchange = () => { s.showBorders = sb.checked; this.apply(); this.save(); };
-        sl.onchange = () => { s.showLabels  = sl.checked; this.apply(); this.save(); };
-        rc.onchange = () => { s.roundedCorners = rc.checked; this.apply(); this.save(); };
+        sb.onchange = () => { s.showBorders = sb.checked; this.applyAll(); this.save(); };
+        sl.onchange = () => { s.showLabels  = sl.checked; this.applyAll(); this.save(); };
+        rc.onchange = () => { s.roundedCorners = rc.checked; this.applyAll(); this.save(); };
         lr.onchange = () => { s.lockRatio = lr.checked; this.save(); };
         bg.oninput  = () => {
             s.bgColor = bg.value;
@@ -229,7 +247,7 @@ const SettingsUI = {
     }
 };
 
-// -------------------- Video Boxes --------------------
+// -------------------- Video Boxes (host canvas) --------------------
 const VideoBox = {
     create(stream, opts = {}) {
         const id = 'box-' + (++State.boxCounter);
@@ -249,7 +267,6 @@ const VideoBox = {
             <div class="video-label"><i class="fas ${icon}"></i><span>${label}</span></div>
             <div class="video-controls">
                 <button class="video-control-btn" data-action="mute"><i class="fas fa-volume-up"></i></button>
-                <button class="video-control-btn" data-action="pip"><i class="fas fa-external-link-alt"></i></button>
                 <button class="video-control-btn" data-action="close"><i class="fas fa-times"></i></button>
             </div>
             <div class="audio-indicator ${hasAudio ? '' : 'hidden'}"><i class="fas fa-microphone"></i></div>
@@ -266,6 +283,11 @@ const VideoBox = {
 
         const video = box.querySelector('video');
         video.srcObject = stream;
+
+        // For host window sharing, show entire captured screen without cropping
+        if (opts.hostType === 'host-window') {
+            video.style.objectFit = 'contain'; // overrides CSS cover
+        }
 
         const canvas = $('canvas');
         const rect   = canvas.getBoundingClientRect();
@@ -285,8 +307,9 @@ const VideoBox = {
             el: box,
             video,
             stream,
-            sourceId: opts.sourceId,
-            peerId: opts.peerId
+            sourceId: opts.sourceId || null,
+            peerId: opts.peerId || null,
+            hostType: opts.hostType || null   // 'host-camera' or 'host-window'
         });
 
         this.bindEvents(box, id);
@@ -297,19 +320,16 @@ const VideoBox = {
         const data = State.videoBoxes.get(id);
         if (!data) return;
 
-        // toolbar controls on tile
         box.querySelectorAll('.video-control-btn').forEach(btn => {
             btn.onclick = e => {
                 e.stopPropagation();
                 const act = btn.dataset.action;
                 if (act === 'mute') this.toggleMute(id);
-                if (act === 'pip')  this.togglePip(id);
                 if (act === 'close') this.remove(id);
             };
         });
 
-        // move
-        const startMove = (e) => {
+        const startMove = e => {
             e.preventDefault();
             this.activate(id);
             data.el.classList.add('dragging');
@@ -328,6 +348,7 @@ const VideoBox = {
             document.addEventListener('touchmove', this.onMove, { passive: false });
             document.addEventListener('touchend', this.endMove);
         };
+
         box.querySelector('.move-handle').addEventListener('mousedown', startMove);
         box.querySelector('.move-handle').addEventListener('touchstart', startMove, { passive: false });
 
@@ -346,9 +367,8 @@ const VideoBox = {
             }
         }, { passive: false });
 
-        // resize
         box.querySelectorAll('.resize-handle').forEach(handle => {
-            const startResize = (e) => {
+            const startResize = e => {
                 e.preventDefault();
                 e.stopPropagation();
                 this.activate(id);
@@ -383,20 +403,9 @@ const VideoBox = {
                 document.addEventListener('touchmove', this.onResize, { passive: false });
                 document.addEventListener('touchend', this.endResize);
             };
+
             handle.addEventListener('mousedown', startResize);
             handle.addEventListener('touchstart', startResize, { passive: false });
-        });
-
-        // context menu
-        box.addEventListener('contextmenu', e => {
-            e.preventDefault();
-            const menu = $('context-menu');
-            if (!menu) return;
-            menu.style.left = Math.min(e.clientX, window.innerWidth - 200) + 'px';
-            menu.style.top  = Math.min(e.clientY, window.innerHeight - 250) + 'px';
-            menu.classList.remove('hidden');
-            ContextMenu.boxId = id;
-            this.activate(id);
         });
     },
 
@@ -502,76 +511,21 @@ const VideoBox = {
         if (ind) ind.classList.toggle('muted', data.video.muted);
     },
 
-    async togglePip(id) {
-        const data = State.videoBoxes.get(id);
-        if (!data) return;
-        try {
-            if (document.pictureInPictureElement === data.video) {
-                await document.exitPictureInPicture();
-            } else {
-                await data.video.requestPictureInPicture();
-            }
-        } catch {
-            Toast.warning('Picture-in-Picture not supported on this browser');
-        }
-    },
-
-    toggleMirror(id) {
-        const data = State.videoBoxes.get(id);
-        if (!data) return;
-        data.el.classList.toggle('mirror');
-    },
-
-    resetSize(id) {
-        const data = State.videoBoxes.get(id);
-        if (!data) return;
-        data.el.style.width  = CONFIG.defaultSize.width  + 'px';
-        data.el.style.height = CONFIG.defaultSize.height + 'px';
-    },
-
-    bringFront(id) {
-        const data = State.videoBoxes.get(id);
-        if (!data) return;
-        let maxZ = 10;
-        State.videoBoxes.forEach(b => {
-            const z = parseInt(b.el.style.zIndex || 10, 10);
-            if (z > maxZ) maxZ = z;
-        });
-        data.el.style.zIndex = maxZ + 1;
-    },
-
     remove(id) {
         const data = State.videoBoxes.get(id);
         if (!data) return;
+
+        // If this tile is host's own camera or window, stop the stream
+        if (data.hostType === 'host-camera' || data.hostType === 'host-window') {
+            if (data.stream) {
+                data.stream.getTracks().forEach(t => t.stop());
+            }
+        }
+
         data.el.remove();
         State.videoBoxes.delete(id);
     }
 };
-
-const ContextMenu = { boxId: null };
-
-function bindContextMenu() {
-    const menu = $('context-menu');
-    document.addEventListener('click', e => {
-        if (!e.target.closest('#context-menu')) menu.classList.add('hidden');
-    });
-    menu.querySelectorAll('[data-action]').forEach(item => {
-        item.onclick = () => {
-            const id = ContextMenu.boxId;
-            if (!id) { menu.classList.add('hidden'); return; }
-            const act = item.dataset.action;
-            if (act === 'fullscreen') VideoBox.fullscreen?.(id);
-            if (act === 'pip')        VideoBox.togglePip(id);
-            if (act === 'duplicate')  VideoBox.duplicate?.(id);
-            if (act === 'mute')       VideoBox.toggleMute(id);
-            if (act === 'mirror')     VideoBox.toggleMirror(id);
-            if (act === 'reset')      VideoBox.resetSize(id);
-            if (act === 'front')      VideoBox.bringFront(id);
-            if (act === 'remove')     VideoBox.remove(id);
-            menu.classList.add('hidden');
-        };
-    });
-}
 
 // -------------------- Connection Manager --------------------
 const ConnectionManager = {
@@ -635,14 +589,14 @@ const ConnectionManager = {
             config: { iceServers: CONFIG.iceServers }
         });
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => reject(new Error('Timeout')), 15000);
+            const t = setTimeout(() => reject(new Error('Timeout')), 15000);
             State.peer.on('open', id => {
-                clearTimeout(timer);
+                clearTimeout(t);
                 State.peerId = id;
                 resolve();
             });
             State.peer.on('error', err => {
-                clearTimeout(timer);
+                clearTimeout(t);
                 console.error('Guest error:', err);
                 reject(new Error('Unable to initialize guest connection'));
             });
@@ -657,20 +611,18 @@ const ConnectionManager = {
                 reliable: true,
                 metadata: { deviceInfo: Utils.deviceInfo() }
             });
-            const timer = setTimeout(() => reject(new Error('Host not found')), 15000);
+            const t = setTimeout(() => reject(new Error('Host not found')), 15000);
 
             conn.on('open', () => {
-                clearTimeout(timer);
+                clearTimeout(t);
                 State.hostConnection = conn;
                 conn.on('data', data => this.handleHostMessage(data));
-                conn.on('close', () => {
-                    Toast.warning('Disconnected from host');
-                });
+                conn.on('close', () => Toast.warning('Disconnected from host'));
                 resolve();
             });
 
             conn.on('error', err => {
-                clearTimeout(timer);
+                clearTimeout(t);
                 console.error('Connect error:', err);
                 reject(new Error('Host not found or offline'));
             });
@@ -680,7 +632,6 @@ const ConnectionManager = {
     handleGuestMessage(peerId, data) {
         if (!data || !data.type) return;
         const conn = State.connections.get(peerId);
-
         switch (data.type) {
             case 'guest-info':
                 if (conn) {
@@ -756,17 +707,16 @@ const ConnectionManager = {
 const HostPanelUI = {
     init() {
         const panel = $('host-panel');
-        const open1 = $('open-host-panel-btn');
-        const open2 = $('open-host-panel-btn-2');
+        const open  = $('open-host-panel-btn');
         const close = $('host-panel-close');
+        if (!panel || !open || !close) return;
 
         const toggle = () => {
             panel.classList.toggle('hidden');
             if (!panel.classList.contains('hidden')) this.render();
         };
 
-        open1.onclick = toggle;
-        if (open2) open2.onclick = toggle;
+        open.onclick  = toggle;
         close.onclick = () => panel.classList.add('hidden');
 
         panel.querySelectorAll('.panel-tab').forEach(tab => {
@@ -784,23 +734,20 @@ const HostPanelUI = {
         this.updateBadges();
     },
     updateBadges() {
-        const sBadge = $('sources-badge');
-        const dBadge = $('devices-badge');
-        if (sBadge) sBadge.textContent = State.pendingSources.size;
-        if (dBadge) dBadge.textContent = State.connections.size;
-        const cc = $('connection-count');
-        if (cc) cc.textContent = State.connections.size;
+        const s = $('sources-badge');
+        const d = $('devices-badge');
+        if (s) s.textContent = State.pendingSources.size;
+        if (d) d.textContent = State.connections.size;
     },
     renderSources() {
         const cont = $('tab-sources');
         if (!cont) return;
-
         if (State.pendingSources.size === 0) {
             cont.innerHTML = `
                 <div class="empty-state">
                     <i class="fas fa-video-slash"></i>
                     <p>No sources available</p>
-                    <span>Ask devices to join and share camera/window.</span>
+                    <span>Ask devices to join and share camera.</span>
                 </div>`;
             return;
         }
@@ -812,10 +759,10 @@ const HostPanelUI = {
             card.innerHTML = `
                 <div class="source-card-header">
                     <div class="source-icon">
-                        <i class="fas ${src.type === 'camera' ? 'fa-video' : 'fa-window-maximize'}"></i>
+                        <i class="fas fa-video"></i>
                     </div>
                     <div class="source-info">
-                        <div class="source-name">${src.type === 'camera' ? 'Camera' : 'Window'}</div>
+                        <div class="source-name">Camera</div>
                         <div class="source-device">
                             <i class="fas ${src.deviceInfo?.icon || 'fa-desktop'}"></i>
                             ${src.deviceInfo?.type || 'Device'}
@@ -838,15 +785,14 @@ const HostPanelUI = {
                 </div>
             `;
             card.querySelector('video').srcObject = src.stream;
-            card.querySelector('.source-btn').onclick = (e) => {
+            card.querySelector('.source-btn').onclick = e => {
                 const act = e.currentTarget.dataset.action;
                 if (act === 'display') {
                     VideoBox.create(src.stream, {
-                        label: `${src.deviceInfo?.type || 'Device'} - ${src.type === 'camera' ? 'Camera' : 'Window'}`,
-                        icon: src.type === 'camera' ? 'fa-video' : 'fa-window-maximize',
+                        label: `${src.deviceInfo?.type || 'Device'} - Camera`,
+                        icon: 'fa-video',
                         sourceId: id,
-                        peerId: src.peerId,
-                        mirror: src.type === 'camera'
+                        peerId: src.peerId
                     });
                     ConnectionManager.sendToGuest(src.peerId, {
                         type: 'source-status',
@@ -909,20 +855,62 @@ const GuestUI = {
         $('guest-screen').classList.remove('hidden');
         $('guest-room-code').textContent = Utils.formatRoomId(State.roomId);
 
-        const cameraBtn = $('share-camera-btn');
-        const windowBtn = $('share-window-btn');
-        const bothBtn   = $('share-both-btn');
+        const frontBtn = $('share-camera-btn');
+        const backBtn  = $('share-window-btn'); // back camera
+        const bothBtn  = $('share-both-btn');
 
-        // Hide window sharing options if not supported
-        const canShareWindow = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
-        if (!canShareWindow) {
-            windowBtn.style.display = 'none';
-            bothBtn.style.display   = 'none';
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+            backBtn.style.display = 'none';
+            bothBtn.style.display = 'none';
+            frontBtn.innerHTML = '<i class="fas fa-video"></i><span>Share Camera</span>';
+            frontBtn.onclick = () => this.shareCamera('any');
+            return;
         }
 
-        cameraBtn.onclick = () => this.share('camera');
-        windowBtn.onclick = () => this.share('window');
-        bothBtn.onclick   = () => this.shareBoth();
+        Media.enumerateDevices().then(devs => {
+            const videos = devs.filter(d => d.kind === 'videoinput');
+            if (videos.length === 0) {
+                frontBtn.disabled = true;
+                backBtn.style.display = 'none';
+                bothBtn.style.display = 'none';
+                Toast.error('No cameras found on this device');
+                return;
+            }
+
+            let front = videos.find(d => /front/i.test(d.label));
+            let back  = videos.find(d => /back|rear|environment/i.test(d.label));
+            if (!front && videos[0]) front = videos[0];
+            if (!back && videos[1])  back  = videos[1];
+
+            State.guestCameras.anyId   = videos[0].deviceId;
+            State.guestCameras.frontId = front ? front.deviceId : videos[0].deviceId;
+            State.guestCameras.backId  = back && back.deviceId !== State.guestCameras.frontId
+                ? back.deviceId
+                : (videos[1]?.deviceId || null);
+
+            if (!State.guestCameras.backId) {
+                backBtn.style.display  = 'none';
+                bothBtn.style.display  = 'none';
+                frontBtn.innerHTML = '<i class="fas fa-video"></i><span>Share Camera</span>';
+                frontBtn.onclick = () => this.shareCamera('any');
+            } else {
+                frontBtn.innerHTML = '<i class="fas fa-video"></i><span>Front Camera</span>';
+                backBtn.innerHTML  = '<i class="fas fa-camera-rotate"></i><span>Back Camera</span>';
+                bothBtn.innerHTML  = '<i class="fas fa-layer-group"></i><span>Front + Back</span>';
+
+                frontBtn.onclick = () => this.shareCamera('front');
+                backBtn.onclick  = () => this.shareCamera('back');
+                bothBtn.onclick  = () => {
+                    this.shareCamera('front');
+                    setTimeout(() => this.shareCamera('back'), 500);
+                };
+            }
+        }).catch(() => {
+            backBtn.style.display  = 'none';
+            bothBtn.style.display  = 'none';
+            frontBtn.innerHTML = '<i class="fas fa-video"></i><span>Share Camera</span>';
+            frontBtn.onclick = () => this.shareCamera('any');
+        });
     },
     setConnecting() {
         $('guest-status').classList.remove('hidden');
@@ -944,18 +932,40 @@ const GuestUI = {
         `;
         $('guest-controls').classList.add('hidden');
     },
-    async share(type) {
-        let stream = null;
-        if (type === 'camera') stream = await Media.getCamera();
-        else stream = await Media.getWindow();
+    async shareCamera(facing) {
+        const existsSame = [...State.localSources.values()].some(
+            s => s.type === 'camera' && (s.facing || 'any') === (facing || 'any')
+        );
+        if (existsSame) {
+            Toast.warning(`${facing === 'back' ? 'Back' : facing === 'front' ? 'Front' : 'This'} camera already shared`);
+            return;
+        }
+
+        let deviceId = null;
+        if (facing === 'front') deviceId = State.guestCameras.frontId;
+        else if (facing === 'back') deviceId = State.guestCameras.backId;
+        else deviceId = State.guestCameras.anyId;
+
+        const videoConstraints = deviceId
+            ? { deviceId: { exact: deviceId } }
+            : facing === 'back'
+                ? { facingMode: { ideal: 'environment' } }
+                : { facingMode: { ideal: 'user' } };
+
+        const stream = await Media.getCamera({ video: videoConstraints });
         if (!stream) return;
 
         const sourceId = 'SRC-' + Utils.genId(6);
-        State.localSources.set(sourceId, { stream, type, status: 'pending' });
+        State.localSources.set(sourceId, {
+            stream,
+            type: 'camera',
+            facing: facing || 'any',
+            status: 'pending'
+        });
 
         const hostId = Utils.roomToPeerId(State.roomId);
         State.peer.call(hostId, stream, {
-            metadata: { sourceId, type, deviceInfo: Utils.deviceInfo() }
+            metadata: { sourceId, type: 'camera', deviceInfo: Utils.deviceInfo() }
         });
 
         ConnectionManager.sendToHost({
@@ -965,7 +975,7 @@ const GuestUI = {
         ConnectionManager.sendToHost({
             type: 'source-submitted',
             sourceId,
-            sourceType: type
+            sourceType: 'camera'
         });
 
         stream.getTracks().forEach(t => {
@@ -973,11 +983,7 @@ const GuestUI = {
         });
 
         this.render();
-        Toast.success(`${type === 'camera' ? 'Camera' : 'Window'} shared`);
-    },
-    async shareBoth() {
-        await this.share('camera');
-        await this.share('window');
+        Toast.success(`${facing === 'back' ? 'Back' : facing === 'front' ? 'Front' : 'Camera'} shared`);
     },
     stop(sourceId) {
         const src = State.localSources.get(sourceId);
@@ -989,6 +995,7 @@ const GuestUI = {
     },
     render() {
         const cont = $('guest-my-sources');
+        if (!cont) return;
         cont.innerHTML = '';
         if (State.localSources.size === 0) return;
         const title = document.createElement('div');
@@ -1000,16 +1007,18 @@ const GuestUI = {
             div.className = 'my-source';
             div.innerHTML = `
                 <div class="my-source-icon">
-                    <i class="fas ${s.type === 'camera' ? 'fa-video' : 'fa-window-maximize'}"></i>
+                    <i class="fas fa-video"></i>
                 </div>
                 <div class="my-source-info">
-                    <div class="my-source-name">${s.type === 'camera' ? 'Camera' : 'Window'}</div>
+                    <div class="my-source-name">
+                        ${s.facing === 'back' ? 'Back Camera' : s.facing === 'front' ? 'Front Camera' : 'Camera'}
+                    </div>
                     <div class="my-source-status ${s.status === 'live' ? 'live' : ''}">
                         ${s.status === 'live'
-                          ? '● Live on host screen'
-                          : s.status === 'hidden'
-                          ? 'Hidden by host'
-                          : 'Waiting for host...'}
+                            ? '● Live on host screen'
+                            : s.status === 'hidden'
+                            ? 'Hidden by host'
+                            : 'Waiting for host...'}
                     </div>
                 </div>
                 <button class="my-source-stop"><i class="fas fa-stop"></i></button>
@@ -1030,13 +1039,13 @@ const LoginUI = {
         const guestBtn   = $('join-guest-btn');
         const errorEl    = $('login-error');
 
-        const format = (input) => {
+        const format = input => {
             const clean = Utils.cleanRoomId(input.value);
             input.value = Utils.formatRoomId(clean);
         };
 
-        hostInput.addEventListener('input', () => format(hostInput));
-        guestInput.addEventListener('input', () => format(guestInput));
+        hostInput.oninput  = () => format(hostInput);
+        guestInput.oninput = () => format(guestInput);
 
         genBtn.onclick = () => {
             const id = Utils.genRoomId();
@@ -1058,11 +1067,12 @@ const LoginUI = {
 
             $('login-screen').classList.add('hidden');
             $('host-screen').classList.remove('hidden');
-            $('host-room-display').textContent = Utils.formatRoomId(clean);
 
             try {
                 await ConnectionManager.startHost();
                 HostPanelUI.init();
+                const hostRoomEl = $('host-room-display');
+                if (hostRoomEl) hostRoomEl.textContent = Utils.formatRoomId(clean);
                 Toast.success('Room created: ' + Utils.formatRoomId(clean));
             } catch (err) {
                 console.error(err);
@@ -1102,7 +1112,7 @@ const LoginUI = {
     }
 };
 
-// -------------------- Host UI Helpers --------------------
+// -------------------- Host Toolbar --------------------
 function bindHostUI() {
     const copyBtn = $('copy-room-btn');
     const fullBtn = $('host-fullscreen-btn');
@@ -1121,23 +1131,31 @@ function bindHostUI() {
         fullBtn.onclick = () => {
             if (!document.fullscreenElement) {
                 document.documentElement.requestFullscreen?.();
-                fullBtn.innerHTML = '<i class="fas fa-compress"></i>';
+                fullBtn.innerHTML = '<i class="fas fa-compress"></i><span>Fullscreen</span>';
             } else {
                 document.exitFullscreen?.();
-                fullBtn.innerHTML = '<i class="fas fa-expand"></i>';
+                fullBtn.innerHTML = '<i class="fas fa-expand"></i><span>Fullscreen</span>';
             }
         };
     }
 
     if (addCam) {
         addCam.onclick = async () => {
+            const exists = [...State.videoBoxes.values()].some(
+                b => b.hostType === 'host-camera'
+            );
+            if (exists) {
+                Toast.warning('Your camera is already on the wall');
+                return;
+            }
             const stream = await Media.getCamera();
             if (stream) {
                 VideoBox.create(stream, {
                     label: 'My Camera',
                     icon: 'fa-video',
                     muted: true,
-                    mirror: true
+                    mirror: true,
+                    hostType: 'host-camera'
                 });
             }
         };
@@ -1149,13 +1167,29 @@ function bindHostUI() {
             addWin.style.display = 'none';
         } else {
             addWin.onclick = async () => {
+                const exists = [...State.videoBoxes.values()].some(
+                    b => b.hostType === 'host-window'
+                );
+                if (exists) {
+                    Toast.warning('Your window is already on the wall');
+                    return;
+                }
                 const stream = await Media.getWindow();
                 if (stream) {
+                    const canvas = $('canvas');
+                    const rect = canvas.getBoundingClientRect();
+
                     const id = VideoBox.create(stream, {
                         label: 'My Window',
                         icon: 'fa-window-maximize',
-                        muted: true
+                        muted: true,
+                        hostType: 'host-window',
+                        x: 0,
+                        y: 0,
+                        width: rect.width,
+                        height: rect.height
                     });
+
                     stream.getTracks().forEach(t => {
                         t.onended = () => VideoBox.remove(id);
                     });
@@ -1169,23 +1203,43 @@ function bindHostUI() {
     }
 }
 
+// -------------------- Global click to close panels --------------------
+function bindGlobalPanelClose() {
+    document.addEventListener('mousedown', e => {
+        if (!State.isHost) return;
+        const hostPanel = $('host-panel');
+        const settingsPanel = $('settings-panel');
+        if (!hostPanel && !settingsPanel) return;
+
+        // If click is inside panels or toolbar, do nothing
+        if (e.target.closest('#host-panel') ||
+            e.target.closest('#settings-panel') ||
+            e.target.closest('.toolbar') ||
+            e.target.closest('#open-host-panel-btn') ||
+            e.target.closest('#host-settings-btn')) {
+            return;
+        }
+
+        if (hostPanel) hostPanel.classList.add('hidden');
+        if (settingsPanel) settingsPanel.classList.add('hidden');
+    });
+}
+
 // -------------------- Init --------------------
 function init() {
     SettingsUI.load();
+    SettingsUI.init();
     LoginUI.init();
     bindHostUI();
-    bindContextMenu();
-    SettingsUI.init();
+    bindGlobalPanelClose();
 
-    // pre-fill join if ?room= param is present
+    // Pre-fill join from URL if ?room= present
     const params = new URLSearchParams(location.search);
     const roomParam = params.get('room');
     if (roomParam) {
         const clean = Utils.cleanRoomId(roomParam);
         if (clean) $('guest-room-input').value = Utils.formatRoomId(clean);
     }
-
-    // For guests, we also hide host UI via CSS (body.guest-mode)
 }
 
 document.readyState === 'loading'
