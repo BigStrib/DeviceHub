@@ -1,252 +1,271 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Device Hub</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta charset="UTF-8" />
+    <title>DeviceHub - Multi Device Video Wall</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Icons (fixed) -->
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        referrerpolicy="no-referrer"
+    />
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-    <!-- Main Canvas -->
-    <div id="canvas" class="canvas"></div>
-
-    <!-- Floating Toolbar -->
-    <div id="toolbar" class="toolbar">
-        <div class="toolbar-group">
-            <button id="add-source-btn" class="toolbar-btn primary" title="Add Source">
-                <i class="fas fa-plus"></i>
-            </button>
-        </div>
-        <div class="toolbar-divider"></div>
-        <div class="toolbar-group">
-            <button id="add-device-btn" class="toolbar-btn" title="Connect Device">
-                <i class="fas fa-link"></i>
-            </button>
-            <button id="clear-all-btn" class="toolbar-btn" title="Clear All">
-                <i class="fas fa-trash-alt"></i>
-            </button>
-        </div>
-        <div class="toolbar-divider"></div>
-        <div class="toolbar-group">
-            <button id="fullscreen-btn" class="toolbar-btn" title="Fullscreen">
-                <i class="fas fa-expand"></i>
-            </button>
-            <button id="settings-btn" class="toolbar-btn" title="Settings">
-                <i class="fas fa-cog"></i>
-            </button>
-        </div>
-    </div>
-
-    <!-- Room Badge -->
-    <div id="room-badge" class="room-badge">
-        <span id="room-id">------</span>
-        <button id="copy-room-btn" class="badge-btn" title="Copy">
-            <i class="fas fa-copy"></i>
-        </button>
-    </div>
-
-    <!-- Status Badge -->
-    <div id="status-badge" class="status-badge">
-        <span class="status-dot"></span>
-        <span id="connection-count">0</span>
-    </div>
-
-    <!-- Add Source Modal -->
-    <div id="source-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Add Source</h2>
-                <button class="modal-close" data-close="source-modal">
-                    <i class="fas fa-times"></i>
-                </button>
+<div id="app">
+    <!-- LOGIN SCREEN -->
+    <section id="login-screen" class="screen login-screen">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-logo">
+                    <i class="fas fa-broadcast-tower"></i>
+                </div>
+                <h1>DeviceHub</h1>
+                <p>Host controls the wall. Other devices submit cameras and windows.</p>
             </div>
-            <div class="modal-body">
-                <div class="source-grid">
-                    <button class="source-option" data-source="camera">
-                        <div class="source-icon"><i class="fas fa-video"></i></div>
-                        <span>Camera</span>
-                    </button>
-                    <button class="source-option" data-source="window">
-                        <div class="source-icon"><i class="fas fa-window-maximize"></i></div>
-                        <span>Window</span>
-                    </button>
-                </div>
 
-                <!-- Camera Options -->
-                <div id="camera-options" class="source-options hidden">
-                    <h3>Camera Settings</h3>
-                    <div class="option-row">
-                        <label>Camera</label>
-                        <select id="camera-select"></select>
-                    </div>
-                    <div class="option-row">
-                        <label>Microphone</label>
-                        <select id="audio-select"></select>
-                    </div>
-                    <div class="option-row">
-                        <label>Include Audio</label>
-                        <label class="toggle">
-                            <input type="checkbox" id="include-audio" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div class="option-row">
-                        <label>Mirror Video</label>
-                        <label class="toggle">
-                            <input type="checkbox" id="mirror-video" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <button id="start-camera-btn" class="action-btn">
-                        <i class="fas fa-play"></i> Start Camera
-                    </button>
-                </div>
+            <div class="login-body">
+                <!-- Host Column -->
+                <div class="login-col">
+                    <h2>Host</h2>
+                    <p>On your main PC, create a room and control all sources.</p>
 
-                <!-- Window Options -->
-                <div id="window-options" class="source-options hidden">
-                    <h3>Window Settings</h3>
-                    <div class="option-row">
-                        <label>Capture Audio</label>
-                        <label class="toggle">
-                            <input type="checkbox" id="window-audio">
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <button id="start-window-btn" class="action-btn">
-                        <i class="fas fa-play"></i> Share Window
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Connect Device Modal -->
-    <div id="connect-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Connect Device</h2>
-                <button class="modal-close" data-close="connect-modal">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="connect-section">
-                    <div class="qr-container" id="qr-container"></div>
-                    <p class="connect-info">Scan with another device</p>
-                </div>
-                <div class="connect-section">
-                    <div class="link-row">
-                        <input type="text" id="share-link" readonly>
-                        <button id="copy-link-btn" class="icon-btn">
-                            <i class="fas fa-copy"></i>
+                    <label class="login-label">Room Code</label>
+                    <div class="login-input-row">
+                        <input
+                            id="host-room-input"
+                            class="login-input"
+                            type="text"
+                            placeholder="ABC-123"
+                            maxlength="7"
+                            autocomplete="off"
+                        />
+                        <button id="gen-room-btn" class="login-gen-btn" title="Generate Room Code">
+                            <i class="fas fa-sync"></i>
                         </button>
                     </div>
+
+                    <button id="start-host-btn" class="login-btn primary">
+                        <i class="fas fa-play"></i>
+                        Start Session
+                    </button>
                 </div>
-                <div class="connect-divider"><span>or join a room</span></div>
-                <div class="connect-section">
-                    <div class="join-row">
-                        <input type="text" id="join-input" placeholder="Enter Room ID">
-                        <button id="join-btn" class="action-btn small">Join</button>
-                    </div>
+
+                <div class="login-divider">or</div>
+
+                <!-- Guest Column -->
+                <div class="login-col">
+                    <h2>Join</h2>
+                    <p>On your phone or laptop, join the room and share your camera/window.</p>
+
+                    <label class="login-label">Room Code</label>
+                    <input
+                        id="guest-room-input"
+                        class="login-input"
+                        type="text"
+                        placeholder="ABC-123"
+                        maxlength="7"
+                        autocomplete="off"
+                    />
+
+                    <button id="join-guest-btn" class="login-btn secondary">
+                        <i class="fas fa-sign-in-alt"></i>
+                        Join Room
+                    </button>
                 </div>
             </div>
-        </div>
-    </div>
 
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Settings</h2>
-                <button class="modal-close" data-close="settings-modal">
+            <div id="login-error" class="login-error"></div>
+        </div>
+    </section>
+
+    <!-- HOST SCREEN -->
+    <section id="host-screen" class="screen host-screen hidden">
+        <!-- Top bar (slides in on hover on desktop) -->
+        <header class="top-bar">
+            <div class="brand">
+                <i class="fas fa-broadcast-tower"></i>
+                <span>DeviceHub</span>
+            </div>
+            <div class="room-display">
+                <span>Room:</span>
+                <span id="host-room-display" class="room-code">---</span>
+                <button id="copy-room-btn" class="icon-btn small" title="Copy Room Code">
+                    <i class="fas fa-copy"></i>
+                </button>
+            </div>
+            <div class="top-right">
+                <button id="open-host-panel-btn" class="pill-btn">
+                    <span class="pill-label">
+                        <i class="fas fa-users"></i>
+                        <span id="connection-count">0</span> devices
+                    </span>
+                </button>
+                <button id="host-settings-btn" class="icon-btn small" title="Settings">
+                    <i class="fas fa-sliders-h"></i>
+                </button>
+                <button id="host-fullscreen-btn" class="icon-btn small" title="Toggle Fullscreen">
+                    <i class="fas fa-expand"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Canvas -->
+        <main class="host-main">
+            <div id="canvas" class="canvas"></div>
+        </main>
+
+        <!-- Bottom Toolbar (slides in on hover on desktop) -->
+        <footer id="toolbar" class="toolbar">
+            <div class="toolbar-left">
+                <button id="open-host-panel-btn-2" class="toolbar-btn">
+                    <i class="fas fa-list"></i>
+                    <span>Sources</span>
+                </button>
+            </div>
+            <div class="toolbar-center">
+                <button id="host-add-camera-btn" class="toolbar-btn">
+                    <i class="fas fa-video"></i>
+                    <span>My Camera</span>
+                </button>
+                <button id="host-add-window-btn" class="toolbar-btn">
+                    <i class="fas fa-window-maximize"></i>
+                    <span>My Window</span>
+                </button>
+            </div>
+            <div class="toolbar-right">
+                <button id="host-end-btn" class="toolbar-btn danger">
+                    <i class="fas fa-power-off"></i>
+                    <span>End</span>
+                </button>
+            </div>
+        </footer>
+
+        <!-- HOST PANEL: Sources & Devices -->
+        <aside id="host-panel" class="host-panel hidden">
+            <div class="panel-header">
+                <h3>
+                    <i class="fas fa-tv"></i>
+                    Sources & Devices
+                </h3>
+                <button id="host-panel-close" class="icon-btn small">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="modal-body">
+            <div class="panel-tabs">
+                <button class="panel-tab active" data-tab="sources">
+                    Sources <span id="sources-badge" class="badge">0</span>
+                </button>
+                <button class="panel-tab" data-tab="devices">
+                    Devices <span id="devices-badge" class="badge">0</span>
+                </button>
+            </div>
+            <div class="panel-body">
+                <div id="tab-sources" class="tab-content active"></div>
+                <div id="tab-devices" class="tab-content"></div>
+            </div>
+        </aside>
+
+        <!-- SETTINGS PANEL -->
+        <aside id="settings-panel" class="settings-panel hidden">
+            <div class="settings-header">
+                <h3><i class="fas fa-sliders-h"></i> Settings</h3>
+                <button id="settings-close-btn" class="icon-btn small">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="settings-body">
                 <div class="settings-group">
-                    <h3>Appearance</h3>
-                    <div class="option-row">
-                        <label>Background Color</label>
-                        <input type="color" id="bg-color" value="#0a0a0a">
-                    </div>
-                    <div class="option-row">
-                        <label>Show Labels</label>
-                        <label class="toggle">
-                            <input type="checkbox" id="show-labels" checked>
-                            <span class="toggle-slider"></span>
+                    <h4>Display</h4>
+                    <div class="settings-row">
+                        <span>Show borders</span>
+                        <label class="switch">
+                            <input type="checkbox" id="set-show-borders" checked />
+                            <span class="slider"></span>
                         </label>
                     </div>
-                    <div class="option-row">
-                        <label>Show Borders</label>
-                        <label class="toggle">
-                            <input type="checkbox" id="show-borders" checked>
-                            <span class="toggle-slider"></span>
+                    <div class="settings-row">
+                        <span>Show labels</span>
+                        <label class="switch">
+                            <input type="checkbox" id="set-show-labels" checked />
+                            <span class="slider"></span>
                         </label>
                     </div>
-                    <div class="option-row">
-                        <label>Rounded Corners</label>
-                        <label class="toggle">
-                            <input type="checkbox" id="rounded-corners" checked>
-                            <span class="toggle-slider"></span>
+                    <div class="settings-row">
+                        <span>Rounded corners</span>
+                        <label class="switch">
+                            <input type="checkbox" id="set-rounded-corners" checked />
+                            <span class="slider"></span>
                         </label>
                     </div>
                 </div>
                 <div class="settings-group">
-                    <h3>Video Quality</h3>
-                    <div class="option-row">
-                        <label>Resolution</label>
-                        <select id="resolution-select">
-                            <option value="480">480p</option>
-                            <option value="720" selected>720p</option>
-                            <option value="1080">1080p</option>
-                            <option value="1440">1440p</option>
-                            <option value="2160">4K</option>
-                        </select>
-                    </div>
-                    <div class="option-row">
-                        <label>Frame Rate</label>
-                        <select id="framerate-select">
-                            <option value="15">15 fps</option>
-                            <option value="30" selected>30 fps</option>
-                            <option value="60">60 fps</option>
-                        </select>
+                    <h4>Behavior</h4>
+                    <div class="settings-row">
+                        <span>Lock aspect ratio</span>
+                        <label class="switch">
+                            <input type="checkbox" id="set-lock-ratio" checked />
+                            <span class="slider"></span>
+                        </label>
                     </div>
                 </div>
                 <div class="settings-group">
-                    <h3>Behavior</h3>
-                    <div class="option-row">
-                        <label>Lock Aspect Ratio</label>
-                        <label class="toggle">
-                            <input type="checkbox" id="lock-ratio" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
+                    <h4>Canvas</h4>
+                    <div class="settings-row">
+                        <span>Background color</span>
+                        <input type="color" id="set-bg-color" />
                     </div>
+                </div>
+            </div>
+        </aside>
+    </section>
+
+    <!-- GUEST SCREEN -->
+    <section id="guest-screen" class="screen guest-screen hidden">
+        <div class="guest-card">
+            <div class="guest-header">
+                <h2>Connected to Room</h2>
+                <p>Your camera/window goes only to the host, not to other guests.</p>
+                <div class="guest-room-info">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Room:</span>
+                    <span id="guest-room-code" class="guest-room-id">---</span>
+                </div>
+            </div>
+            <div class="guest-body">
+                <div id="guest-status" class="guest-status">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <span>Connecting to host...</span>
+                </div>
+                <div id="guest-controls" class="guest-controls hidden">
+                    <div class="guest-options">
+                        <button id="share-camera-btn" class="guest-option-btn">
+                            <i class="fas fa-video"></i>
+                            <span>Share Camera</span>
+                        </button>
+                        <button id="share-window-btn" class="guest-option-btn">
+                            <i class="fas fa-window-maximize"></i>
+                            <span>Share Window</span>
+                        </button>
+                        <button id="share-both-btn" class="guest-option-btn">
+                            <i class="fas fa-layer-group"></i>
+                            <span>Camera + Window</span>
+                        </button>
+                    </div>
+                    <div id="guest-my-sources" class="guest-my-sources"></div>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
-    <!-- Confirm Modal -->
-    <div id="confirm-modal" class="modal">
-        <div class="modal-content modal-small">
-            <div class="modal-header">
-                <h2>Confirm</h2>
-            </div>
-            <div class="modal-body">
-                <p id="confirm-message">Are you sure?</p>
-            </div>
-            <div class="modal-footer">
-                <button class="action-btn secondary" data-close="confirm-modal">Cancel</button>
-                <button id="confirm-btn" class="action-btn danger">Confirm</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Toast Container -->
+    <!-- Toasts -->
     <div id="toast-container" class="toast-container"></div>
 
-    <!-- Context Menu -->
+    <!-- Context Menu for host video tiles -->
     <div id="context-menu" class="context-menu hidden">
         <ul>
             <li data-action="fullscreen"><i class="fas fa-expand"></i> Fullscreen</li>
@@ -256,16 +275,17 @@
             <li data-action="mute"><i class="fas fa-volume-up"></i> Toggle Audio</li>
             <li data-action="mirror"><i class="fas fa-arrows-alt-h"></i> Toggle Mirror</li>
             <li class="divider"></li>
-            <li data-action="fit"><i class="fas fa-compress-arrows-alt"></i> Fit to Content</li>
-            <li data-action="reset"><i class="fas fa-undo"></i> Reset Size</li>
+            <li data-action="reset"><i class="fas fa-compress-arrows-alt"></i> Reset Size</li>
             <li data-action="front"><i class="fas fa-layer-group"></i> Bring to Front</li>
             <li class="divider"></li>
-            <li data-action="remove" class="danger"><i class="fas fa-trash"></i> Remove</li>
+            <li data-action="remove" class="danger"><i class="fas fa-trash-alt"></i> Remove</li>
         </ul>
     </div>
+</div>
 
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="app.js"></script>
+<!-- PeerJS -->
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<!-- App Logic -->
+<script src="app.js"></script>
 </body>
 </html>
