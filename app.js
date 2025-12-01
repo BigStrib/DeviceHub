@@ -214,8 +214,8 @@ const SettingsUI = {
     init() {
         const panel = $('settings-panel');
         const open  = $('host-settings-btn');
-        const close = $('settings-close-btn');
-        if (!panel || !open || !close) return;
+        theclose = $('settings-close-btn');
+        if (!panel || !open || !theclose) return;
 
         const sb = $('set-show-borders');
         const sl = $('set-show-labels');
@@ -231,7 +231,7 @@ const SettingsUI = {
         bg.value   = s.bgColor;
 
         open.onclick  = () => panel.classList.toggle('hidden');
-        close.onclick = () => panel.classList.add('hidden');
+        theclose.onclick = () => panel.classList.add('hidden');
 
         sb.onchange = () => { s.showBorders = sb.checked; this.applyAll(); this.save(); };
         sl.onchange = () => { s.showLabels  = sl.checked; this.applyAll(); this.save(); };
@@ -286,7 +286,7 @@ const VideoBox = {
 
         // For host window sharing, show entire captured screen without cropping
         if (opts.hostType === 'host-window') {
-            video.style.objectFit = 'contain'; // overrides CSS cover
+            video.style.objectFit = 'contain';
         }
 
         const canvas = $('canvas');
@@ -639,35 +639,46 @@ const ConnectionManager = {
                     HostPanelUI.render();
                 }
                 break;
-            case 'source-ended':
-                {
-                    const srcId = data.sourceId;
-                    const src = State.pendingSources.get(srcId);
-                    if (src) {
-                        src.call?.close();
-                        State.pendingSources.delete(srcId);
-                        State.videoBoxes.forEach((box, boxId) => {
-                            if (box.sourceId === srcId) VideoBox.remove(boxId);
-                        });
-                        HostPanelUI.render();
-                    }
+            case 'source-ended': {
+                const srcId = data.sourceId;
+                const src = State.pendingSources.get(srcId);
+                if (src) {
+                    src.call?.close();
+                    State.pendingSources.delete(srcId);
+                    State.videoBoxes.forEach((box, boxId) => {
+                        if (box.sourceId === srcId) VideoBox.remove(boxId);
+                    });
+                    HostPanelUI.render();
                 }
                 break;
+            }
         }
     },
 
     handleHostMessage(data) {
         if (!data || !data.type) return;
-        if (data.type === 'source-status') {
-            const src = State.localSources.get(data.sourceId);
-            if (src) {
-                src.status = data.status;
-                GuestUI.render();
+        switch (data.type) {
+            case 'source-status': {
+                const src = State.localSources.get(data.sourceId);
+                if (src) {
+                    src.status = data.status;
+                    GuestUI.render();
+                }
+                break;
             }
-        }
-        if (data.type === 'kick') {
-            Toast.warning('Disconnected by host');
-            setTimeout(() => location.reload(), 2000);
+            case 'kick':
+                Toast.warning('Disconnected by host');
+                setTimeout(() => location.reload(), 2000);
+                break;
+            case 'host-remove-source': {
+                const src = State.localSources.get(data.sourceId);
+                if (src) {
+                    src.stream.getTracks().forEach(t => t.stop());
+                    State.localSources.delete(data.sourceId);
+                    GuestUI.render();
+                }
+                break;
+            }
         }
     },
 
@@ -700,6 +711,31 @@ const ConnectionManager = {
     kickPeer(peerId) {
         this.sendToGuest(peerId, { type: 'kick' });
         setTimeout(() => this.removePeer(peerId), 300);
+    },
+
+    // Host fully removes/rejects a source
+    removeSource(sourceId) {
+        const src = State.pendingSources.get(sourceId);
+        if (!src) return;
+
+        // Remove any tiles using this source
+        State.videoBoxes.forEach((box, boxId) => {
+            if (box.sourceId === sourceId) VideoBox.remove(boxId);
+        });
+
+        // Close call, stop stream
+        try { src.call?.close(); } catch {}
+        if (src.stream) src.stream.getTracks().forEach(t => t.stop());
+
+        // Tell guest that host removed this source
+        this.sendToGuest(src.peerId, {
+            type: 'host-remove-source',
+            sourceId
+        });
+
+        State.pendingSources.delete(sourceId);
+        HostPanelUI.render();
+        Toast.info('Source removed');
     }
 };
 
@@ -774,43 +810,54 @@ const HostPanelUI = {
                     <video autoplay muted playsinline></video>
                 </div>
                 <div class="source-actions">
-                    ${displayed
-                        ? `<button class="source-btn danger" data-action="remove" data-id="${id}">
-                               <i class="fas fa-eye-slash"></i> Remove from canvas
-                           </button>`
-                        : `<button class="source-btn primary" data-action="display" data-id="${id}">
-                               <i class="fas fa-plus"></i> Add to canvas
-                           </button>`
-                    }
+                    <button class="source-btn ${displayed ? 'danger' : 'primary'}"
+                            data-action="${displayed ? 'remove' : 'display'}"
+                            data-id="${id}">
+                        <i class="fas ${displayed ? 'fa-eye-slash' : 'fa-plus'}"></i>
+                        ${displayed ? 'Remove from canvas' : 'Add to canvas'}
+                    </button>
+                    <button class="source-btn subtle"
+                            data-action="delete"
+                            data-id="${id}">
+                        <i class="fas fa-trash-alt"></i>
+                        Remove source
+                    </button>
                 </div>
             `;
             card.querySelector('video').srcObject = src.stream;
-            card.querySelector('.source-btn').onclick = e => {
-                const act = e.currentTarget.dataset.action;
-                if (act === 'display') {
-                    VideoBox.create(src.stream, {
-                        label: `${src.deviceInfo?.type || 'Device'} - Camera`,
-                        icon: 'fa-video',
-                        sourceId: id,
-                        peerId: src.peerId
-                    });
-                    ConnectionManager.sendToGuest(src.peerId, {
-                        type: 'source-status',
-                        sourceId: id,
-                        status: 'live'
-                    });
-                } else {
-                    State.videoBoxes.forEach((box, boxId) => {
-                        if (box.sourceId === id) VideoBox.remove(boxId);
-                    });
-                    ConnectionManager.sendToGuest(src.peerId, {
-                        type: 'source-status',
-                        sourceId: id,
-                        status: 'hidden'
-                    });
-                }
-                this.render();
-            };
+
+            card.querySelectorAll('.source-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const act = btn.dataset.action;
+                    const sid = btn.dataset.id;
+                    if (act === 'display') {
+                        VideoBox.create(src.stream, {
+                            label: `${src.deviceInfo?.type || 'Device'} - Camera`,
+                            icon: 'fa-video',
+                            sourceId: sid,
+                            peerId: src.peerId
+                        });
+                        ConnectionManager.sendToGuest(src.peerId, {
+                            type: 'source-status',
+                            sourceId: sid,
+                            status: 'live'
+                        });
+                    } else if (act === 'remove') {
+                        State.videoBoxes.forEach((box, boxId) => {
+                            if (box.sourceId === sid) VideoBox.remove(boxId);
+                        });
+                        ConnectionManager.sendToGuest(src.peerId, {
+                            type: 'source-status',
+                            sourceId: sid,
+                            status: 'hidden'
+                        });
+                    } else if (act === 'delete') {
+                        ConnectionManager.removeSource(sid);
+                    }
+                    this.render();
+                };
+            });
+
             cont.appendChild(card);
         });
     },
@@ -1047,6 +1094,20 @@ const LoginUI = {
         hostInput.oninput  = () => format(hostInput);
         guestInput.oninput = () => format(guestInput);
 
+        // Press Enter to create/join
+        hostInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                hostBtn.click();
+            }
+        });
+        guestInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                guestBtn.click();
+            }
+        });
+
         genBtn.onclick = () => {
             const id = Utils.genRoomId();
             hostInput.value = Utils.formatRoomId(id);
@@ -1225,6 +1286,35 @@ function bindGlobalPanelClose() {
     });
 }
 
+// -------------------- Show/hide UI when mouse enters/leaves the page --------------------
+const InactivityUI = {
+    init() {
+        const hostScreen = $('host-screen');
+        if (!hostScreen) return;
+
+        const show = () => {
+            if (!State.isHost || hostScreen.classList.contains('hidden')) return;
+            document.body.classList.remove('ui-hidden');
+        };
+
+        const hide = () => {
+            if (!State.isHost || hostScreen.classList.contains('hidden')) return;
+            document.body.classList.add('ui-hidden');
+        };
+
+        // Mouse inside the page -> show UI
+        hostScreen.addEventListener('mouseenter', show);
+        hostScreen.addEventListener('mousemove', show);
+
+        // Mouse leaves the page (host screen) -> hide UI instantly
+        hostScreen.addEventListener('mouseleave', hide);
+
+        // Window blur/focus as backup
+        window.addEventListener('blur', hide);
+        window.addEventListener('focus', show);
+    }
+};
+
 // -------------------- Init --------------------
 function init() {
     SettingsUI.load();
@@ -1232,6 +1322,7 @@ function init() {
     LoginUI.init();
     bindHostUI();
     bindGlobalPanelClose();
+    InactivityUI.init();
 
     // Pre-fill join from URL if ?room= present
     const params = new URLSearchParams(location.search);
