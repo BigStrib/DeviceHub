@@ -1,5 +1,6 @@
 /* ========================================
-   DeviceHub - Remote Source Selection
+   DeviceHub - Host Controls All Sources
+   External users submit, Host displays
 ======================================== */
 
 const CONFIG = {
@@ -24,9 +25,12 @@ const State = {
     peerId: null,
     roomId: null,
     isHost: false,
-    connections: new Map(), // peerId -> { data, media, info, sources, streams }
+    hostPeerId: null,
+    connections: new Map(),
     videoBoxes: new Map(),
-    localStreams: new Map(), // streamId -> { stream, type, boxId }
+    localStreams: new Map(),
+    submittedSources: new Map(), // Sources submitted by guests
+    pendingSources: new Map(), // Sources waiting for host to display
     activeBox: null,
     boxCounter: 0,
     streamCounter: 0,
@@ -39,43 +43,112 @@ const State = {
         lockRatio: true,
         bgColor: '#0a0a0a'
     },
-    interaction: null,
-    pendingRequests: new Map() // requestId -> { type, resolve, reject }
+    interaction: null
 };
 
 const $ = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
 
 // ========================================
-// Create Device Panel HTML dynamically
+// Dynamic UI Creation
 // ========================================
-function createDevicePanel() {
+function createHostPanel() {
     const panel = document.createElement('div');
-    panel.id = 'device-panel';
-    panel.className = 'device-panel hidden';
+    panel.id = 'host-panel';
+    panel.className = 'host-panel hidden';
     panel.innerHTML = `
-        <div class="device-panel-header">
-            <h3><i class="fas fa-devices"></i> Connected Devices</h3>
-            <button class="panel-close" id="close-device-panel"><i class="fas fa-times"></i></button>
+        <div class="panel-header">
+            <h3><i class="fas fa-tv"></i> Source Manager</h3>
+            <button class="panel-close" id="close-host-panel"><i class="fas fa-times"></i></button>
         </div>
-        <div class="device-panel-body" id="device-list">
-            <div class="no-devices">
-                <i class="fas fa-plug"></i>
-                <p>No devices connected</p>
-                <span>Share your Room ID to connect devices</span>
+        <div class="panel-tabs">
+            <button class="panel-tab active" data-tab="available">Available Sources</button>
+            <button class="panel-tab" data-tab="devices">Devices</button>
+        </div>
+        <div class="panel-body">
+            <div class="tab-content active" id="tab-available">
+                <div id="available-sources" class="source-list">
+                    <div class="empty-state">
+                        <i class="fas fa-broadcast-tower"></i>
+                        <p>No sources submitted</p>
+                        <span>Waiting for devices to submit sources...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-content" id="tab-devices">
+                <div id="device-list" class="device-list">
+                    <div class="empty-state">
+                        <i class="fas fa-plug"></i>
+                        <p>No devices connected</p>
+                        <span>Share your Room ID</span>
+                    </div>
+                </div>
             </div>
         </div>
     `;
     document.body.appendChild(panel);
-    
-    // Add panel styles
+    return panel;
+}
+
+function createGuestPanel() {
+    const panel = document.createElement('div');
+    panel.id = 'guest-panel';
+    panel.className = 'guest-panel hidden';
+    panel.innerHTML = `
+        <div class="panel-header">
+            <h3><i class="fas fa-share-alt"></i> Submit Source</h3>
+            <button class="panel-close" id="close-guest-panel"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="panel-body">
+            <p class="panel-desc">Share your camera or window with the host</p>
+            <div class="guest-options">
+                <button class="guest-source-btn" id="submit-camera">
+                    <i class="fas fa-video"></i>
+                    <span>Share Camera</span>
+                </button>
+                <button class="guest-source-btn" id="submit-window">
+                    <i class="fas fa-window-maximize"></i>
+                    <span>Share Window</span>
+                </button>
+            </div>
+            <div class="submitted-sources" id="my-sources">
+                <!-- User's submitted sources shown here -->
+            </div>
+        </div>
+    `;
+    document.body.appendChild(panel);
+    return panel;
+}
+
+function createGuestToolbar() {
+    const toolbar = document.createElement('div');
+    toolbar.id = 'guest-toolbar';
+    toolbar.className = 'guest-toolbar';
+    toolbar.innerHTML = `
+        <div class="guest-status">
+            <span class="status-dot connected"></span>
+            <span>Connected to Host</span>
+        </div>
+        <button id="open-guest-panel" class="guest-toolbar-btn">
+            <i class="fas fa-share-alt"></i>
+            Submit Source
+        </button>
+    `;
+    document.body.appendChild(toolbar);
+    return toolbar;
+}
+
+function injectStyles() {
     const style = document.createElement('style');
     style.textContent = `
-        .device-panel {
+        /* ========================================
+           Host Panel Styles
+        ======================================== */
+        .host-panel {
             position: fixed;
             top: 60px;
             left: 16px;
-            width: 320px;
+            width: 340px;
             max-width: calc(100vw - 32px);
             max-height: calc(100vh - 120px);
             background: var(--surface);
@@ -86,19 +159,13 @@ function createDevicePanel() {
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            animation: panelSlideIn 0.2s ease;
         }
         
-        .device-panel.hidden {
+        .host-panel.hidden, .guest-panel.hidden {
             display: none;
         }
         
-        @keyframes panelSlideIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .device-panel-header {
+        .panel-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -107,16 +174,15 @@ function createDevicePanel() {
             background: var(--surface-hover);
         }
         
-        .device-panel-header h3 {
+        .panel-header h3 {
             font-size: 14px;
             font-weight: 600;
             display: flex;
             align-items: center;
             gap: 8px;
-            color: var(--text);
         }
         
-        .device-panel-header h3 i {
+        .panel-header h3 i {
             color: var(--accent);
         }
         
@@ -139,58 +205,223 @@ function createDevicePanel() {
             color: var(--text);
         }
         
-        .device-panel-body {
+        .panel-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .panel-tab {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition);
+            position: relative;
+        }
+        
+        .panel-tab:hover {
+            color: var(--text);
+            background: var(--surface-hover);
+        }
+        
+        .panel-tab.active {
+            color: var(--accent);
+        }
+        
+        .panel-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--accent);
+        }
+        
+        .panel-body {
             flex: 1;
             overflow-y: auto;
             padding: 12px;
         }
         
-        .no-devices {
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .empty-state {
             text-align: center;
             padding: 32px 16px;
             color: var(--text-muted);
         }
         
-        .no-devices i {
+        .empty-state i {
             font-size: 32px;
             margin-bottom: 12px;
-            opacity: 0.5;
+            opacity: 0.4;
         }
         
-        .no-devices p {
+        .empty-state p {
             font-size: 14px;
-            font-weight: 500;
             color: var(--text-secondary);
             margin-bottom: 4px;
         }
         
-        .no-devices span {
+        .empty-state span {
             font-size: 12px;
         }
         
+        /* Source Cards */
+        .source-card {
+            background: var(--surface-hover);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            margin-bottom: 10px;
+            animation: slideIn 0.2s ease;
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .source-card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .source-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--accent-light);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent);
+            font-size: 14px;
+        }
+        
+        .source-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .source-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+        }
+        
+        .source-device {
+            font-size: 11px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .source-preview {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        
+        .source-preview video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .source-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .source-action-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all var(--transition);
+        }
+        
+        .source-action-btn.primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        
+        .source-action-btn.primary:hover {
+            background: var(--accent-hover);
+        }
+        
+        .source-action-btn.secondary {
+            background: var(--surface-active);
+            color: var(--text);
+        }
+        
+        .source-action-btn.secondary:hover {
+            background: var(--border);
+        }
+        
+        .source-action-btn.danger {
+            background: transparent;
+            border: 1px solid var(--danger);
+            color: var(--danger);
+        }
+        
+        .source-action-btn.danger:hover {
+            background: var(--danger);
+            color: #fff;
+        }
+        
+        .source-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            background: var(--success);
+            color: #fff;
+            font-size: 10px;
+            font-weight: 600;
+            border-radius: 4px;
+            margin-left: auto;
+        }
+        
+        .source-badge.pending {
+            background: var(--warning);
+        }
+        
+        /* Device Cards */
         .device-card {
             background: var(--surface-hover);
             border: 1px solid var(--border);
             border-radius: var(--radius);
+            padding: 12px;
             margin-bottom: 10px;
-            overflow: hidden;
-        }
-        
-        .device-card:last-child {
-            margin-bottom: 0;
-        }
-        
-        .device-card-header {
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 12px;
-            cursor: pointer;
-            transition: background var(--transition);
-        }
-        
-        .device-card-header:hover {
-            background: var(--surface-active);
         }
         
         .device-icon {
@@ -203,21 +434,15 @@ function createDevicePanel() {
             justify-content: center;
             color: var(--accent);
             font-size: 16px;
-            flex-shrink: 0;
         }
         
         .device-info {
             flex: 1;
-            min-width: 0;
         }
         
         .device-name {
             font-size: 14px;
             font-weight: 600;
-            color: var(--text);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
         
         .device-status {
@@ -236,246 +461,265 @@ function createDevicePanel() {
             border-radius: 50%;
         }
         
-        .device-expand {
+        .device-sources-count {
+            font-size: 11px;
             color: var(--text-muted);
-            font-size: 12px;
-            transition: transform var(--transition);
         }
         
-        .device-card.expanded .device-expand {
-            transform: rotate(180deg);
-        }
-        
-        .device-sources {
-            display: none;
-            padding: 0 12px 12px;
-            border-top: 1px solid var(--border);
-        }
-        
-        .device-card.expanded .device-sources {
-            display: block;
-        }
-        
-        .source-label {
-            font-size: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--text-muted);
-            margin: 12px 0 8px;
-        }
-        
-        .source-btn {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            width: 100%;
-            padding: 10px 12px;
-            background: var(--bg-color);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            color: var(--text);
-            font-size: 13px;
-            cursor: pointer;
-            transition: all var(--transition);
-            margin-bottom: 6px;
-        }
-        
-        .source-btn:last-child {
-            margin-bottom: 0;
-        }
-        
-        .source-btn:hover {
-            background: var(--surface-active);
-            border-color: var(--accent);
-        }
-        
-        .source-btn:active {
-            transform: scale(0.98);
-        }
-        
-        .source-btn.active {
-            background: var(--accent-light);
-            border-color: var(--accent);
-        }
-        
-        .source-btn.loading {
-            opacity: 0.7;
-            pointer-events: none;
-        }
-        
-        .source-btn i {
-            font-size: 14px;
-            color: var(--accent);
-            width: 20px;
-            text-align: center;
-        }
-        
-        .source-btn .spinner {
-            width: 14px;
-            height: 14px;
-            border: 2px solid var(--border);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .device-disconnect {
-            width: 100%;
-            padding: 10px;
-            background: transparent;
-            border: 1px solid var(--danger);
-            border-radius: var(--radius);
-            color: var(--danger);
-            font-size: 12px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all var(--transition);
-            margin-top: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-        }
-        
-        .device-disconnect:hover {
-            background: var(--danger);
-            color: #fff;
-        }
-        
-        .active-streams {
-            margin-top: 8px;
-        }
-        
-        .active-stream {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 10px;
-            background: var(--accent-light);
-            border-radius: var(--radius);
-            margin-bottom: 6px;
-            font-size: 12px;
-        }
-        
-        .active-stream-info {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: var(--text);
-        }
-        
-        .active-stream-info i {
-            color: var(--accent);
-        }
-        
-        .stream-stop {
-            width: 22px;
-            height: 22px;
+        .device-kick {
+            width: 28px;
+            height: 28px;
             border: none;
-            background: rgba(255,255,255,0.1);
-            color: var(--text-secondary);
-            border-radius: 4px;
+            background: transparent;
+            color: var(--text-muted);
+            border-radius: 6px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 10px;
             transition: all var(--transition);
         }
         
-        .stream-stop:hover {
+        .device-kick:hover {
             background: var(--danger);
             color: #fff;
         }
         
-        /* Request notification */
-        .request-modal {
+        /* ========================================
+           Guest Panel & Toolbar Styles
+        ======================================== */
+        .guest-panel {
             position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.9);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 400;
-            padding: 20px;
-        }
-        
-        .request-content {
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 320px;
+            max-width: calc(100vw - 32px);
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: var(--radius-lg);
-            padding: 24px;
-            max-width: 360px;
-            width: 100%;
-            text-align: center;
+            box-shadow: var(--shadow-lg);
+            z-index: 250;
+            overflow: hidden;
         }
         
-        .request-icon {
-            width: 64px;
-            height: 64px;
-            background: var(--accent-light);
-            border-radius: 50%;
+        .panel-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        
+        .guest-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        
+        .guest-source-btn {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: center;
-            margin: 0 auto 16px;
-            font-size: 28px;
+            gap: 8px;
+            padding: 20px 16px;
+            background: var(--surface-hover);
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+        
+        .guest-source-btn:hover {
+            border-color: var(--accent);
+            background: var(--accent-light);
+        }
+        
+        .guest-source-btn:active {
+            transform: scale(0.97);
+        }
+        
+        .guest-source-btn i {
+            font-size: 24px;
             color: var(--accent);
         }
         
-        .request-title {
-            font-size: 18px;
+        .guest-source-btn span {
+            font-size: 12px;
             font-weight: 600;
+        }
+        
+        .guest-source-btn:disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        
+        .submitted-sources {
+            border-top: 1px solid var(--border);
+            padding-top: 12px;
+            margin-top: 8px;
+        }
+        
+        .submitted-source {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: var(--surface-hover);
+            border-radius: var(--radius);
             margin-bottom: 8px;
         }
         
-        .request-desc {
-            font-size: 14px;
-            color: var(--text-secondary);
-            margin-bottom: 20px;
-        }
-        
-        .request-buttons {
+        .submitted-source-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--accent-light);
+            border-radius: 6px;
             display: flex;
-            gap: 10px;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent);
+            font-size: 12px;
         }
         
-        .request-btn {
+        .submitted-source-info {
             flex: 1;
-            padding: 12px;
+        }
+        
+        .submitted-source-name {
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .submitted-source-status {
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+        
+        .submitted-source-status.live {
+            color: var(--success);
+        }
+        
+        .submitted-source-stop {
+            width: 26px;
+            height: 26px;
             border: none;
-            border-radius: var(--radius);
-            font-size: 14px;
+            background: var(--danger);
+            color: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            transition: all var(--transition);
+        }
+        
+        .submitted-source-stop:hover {
+            background: var(--danger-hover);
+        }
+        
+        /* Guest Toolbar */
+        .guest-toolbar {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 20px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 50px;
+            box-shadow: var(--shadow-lg);
+            z-index: 200;
+        }
+        
+        .guest-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        .guest-status .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+        
+        .guest-status .status-dot.connected {
+            background: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+        
+        .guest-toolbar-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            background: var(--accent);
+            border: none;
+            border-radius: 50px;
+            color: #fff;
+            font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             transition: all var(--transition);
         }
         
-        .request-btn.accept {
-            background: var(--accent);
-            color: #fff;
-        }
-        
-        .request-btn.accept:hover {
+        .guest-toolbar-btn:hover {
             background: var(--accent-hover);
         }
         
-        .request-btn.deny {
-            background: var(--surface-hover);
-            color: var(--text);
+        /* Hide host elements for guests */
+        body.guest-mode .toolbar {
+            display: none;
         }
         
-        .request-btn.deny:hover {
-            background: var(--surface-active);
+        body.guest-mode .room-badge {
+            display: none;
         }
         
+        body.guest-mode .status-badge {
+            display: none;
+        }
+        
+        /* Notification Badge */
+        .notif-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            min-width: 18px;
+            height: 18px;
+            background: var(--danger);
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 5px;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        .notif-badge.hidden {
+            display: none;
+        }
+        
+        /* Responsive */
         @media (max-width: 600px) {
-            .device-panel {
+            .host-panel {
                 top: auto;
                 bottom: 80px;
                 left: 10px;
@@ -483,15 +727,22 @@ function createDevicePanel() {
                 width: auto;
                 max-height: 60vh;
             }
+            
+            .guest-panel {
+                bottom: 70px;
+                width: calc(100% - 20px);
+            }
+            
+            .guest-toolbar {
+                bottom: 12px;
+                padding: 10px 16px;
+            }
         }
     `;
     document.head.appendChild(style);
-    
-    return panel;
 }
 
-// Create panel on load
-let devicePanel;
+let hostPanel, guestPanel, guestToolbar;
 
 const DOM = {
     canvas: $('canvas'),
@@ -622,186 +873,386 @@ const Modal = {
 };
 
 // ========================================
-// Request Modal for incoming source requests
+// Host Panel Manager
 // ========================================
-const RequestModal = {
-    show(type, fromDevice, onAccept, onDeny) {
-        const modal = document.createElement('div');
-        modal.className = 'request-modal';
-        modal.innerHTML = `
-            <div class="request-content">
-                <div class="request-icon">
-                    <i class="fas ${type === 'camera' ? 'fa-video' : 'fa-window-maximize'}"></i>
-                </div>
-                <div class="request-title">${type === 'camera' ? 'Camera' : 'Window'} Request</div>
-                <div class="request-desc">
-                    The host is requesting access to your ${type === 'camera' ? 'camera' : 'window/screen'}.
-                </div>
-                <div class="request-buttons">
-                    <button class="request-btn deny">Deny</button>
-                    <button class="request-btn accept">Allow</button>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        modal.querySelector('.accept').onclick = () => {
-            modal.remove();
-            onAccept();
-        };
-        
-        modal.querySelector('.deny').onclick = () => {
-            modal.remove();
-            onDeny();
-        };
-    }
-};
-
-// ========================================
-// Device Panel
-// ========================================
-const DevicePanel = {
+const HostPanel = {
     init() {
-        devicePanel = createDevicePanel();
+        hostPanel = createHostPanel();
         
-        $('close-device-panel').onclick = () => this.hide();
+        $('close-host-panel').onclick = () => this.hide();
         
-        // Update status badge to open panel
+        // Tab switching
+        hostPanel.querySelectorAll('.panel-tab').forEach(tab => {
+            tab.onclick = () => {
+                hostPanel.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+                hostPanel.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                $('tab-' + tab.dataset.tab).classList.add('active');
+            };
+        });
+        
+        // Make status badge clickable to open panel
         DOM.statusBadge.style.cursor = 'pointer';
         DOM.statusBadge.onclick = () => this.toggle();
+        
+        // Add notification badge to status
+        const badge = document.createElement('span');
+        badge.className = 'notif-badge hidden';
+        badge.id = 'source-notif';
+        badge.textContent = '0';
+        DOM.statusBadge.style.position = 'relative';
+        DOM.statusBadge.appendChild(badge);
     },
     
     show() {
-        devicePanel.classList.remove('hidden');
+        hostPanel.classList.remove('hidden');
         this.render();
     },
     
     hide() {
-        devicePanel.classList.add('hidden');
+        hostPanel.classList.add('hidden');
     },
     
     toggle() {
-        if (devicePanel.classList.contains('hidden')) {
+        if (hostPanel.classList.contains('hidden')) {
             this.show();
         } else {
             this.hide();
         }
     },
     
+    updateNotification() {
+        const badge = $('source-notif');
+        const count = State.pendingSources.size;
+        badge.textContent = count;
+        badge.classList.toggle('hidden', count === 0);
+    },
+    
     render() {
-        const list = $('device-list');
+        this.renderSources();
+        this.renderDevices();
+        this.updateNotification();
+    },
+    
+    renderSources() {
+        const container = $('available-sources');
         
-        if (State.connections.size === 0) {
-            list.innerHTML = `
-                <div class="no-devices">
-                    <i class="fas fa-plug"></i>
-                    <p>No devices connected</p>
-                    <span>Share your Room ID to connect devices</span>
+        if (State.pendingSources.size === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-broadcast-tower"></i>
+                    <p>No sources available</p>
+                    <span>Waiting for devices to submit sources...</span>
                 </div>
             `;
             return;
         }
         
-        list.innerHTML = '';
+        container.innerHTML = '';
+        
+        State.pendingSources.forEach((source, sourceId) => {
+            const card = document.createElement('div');
+            card.className = 'source-card';
+            card.dataset.sourceId = sourceId;
+            
+            const isDisplayed = this.isSourceDisplayed(sourceId);
+            
+            card.innerHTML = `
+                <div class="source-card-header">
+                    <div class="source-icon">
+                        <i class="fas ${source.type === 'camera' ? 'fa-video' : 'fa-window-maximize'}"></i>
+                    </div>
+                    <div class="source-info">
+                        <div class="source-name">${source.type === 'camera' ? 'Camera' : 'Window'}</div>
+                        <div class="source-device">
+                            <i class="fas ${source.deviceInfo?.icon || 'fa-desktop'}"></i>
+                            ${source.deviceInfo?.type || 'Device'}
+                        </div>
+                    </div>
+                    ${isDisplayed ? '<span class="source-badge"><i class="fas fa-eye"></i> Live</span>' : ''}
+                </div>
+                <div class="source-preview">
+                    <video autoplay playsinline muted></video>
+                </div>
+                <div class="source-actions">
+                    ${isDisplayed ? `
+                        <button class="source-action-btn danger" data-action="hide" data-source-id="${sourceId}">
+                            <i class="fas fa-eye-slash"></i> Remove
+                        </button>
+                    ` : `
+                        <button class="source-action-btn primary" data-action="display" data-source-id="${sourceId}">
+                            <i class="fas fa-plus"></i> Add to Canvas
+                        </button>
+                    `}
+                </div>
+            `;
+            
+            // Set video source
+            const video = card.querySelector('video');
+            video.srcObject = source.stream;
+            
+            // Action buttons
+            card.querySelector('[data-action]').onclick = (e) => {
+                const action = e.currentTarget.dataset.action;
+                const sid = e.currentTarget.dataset.sourceId;
+                
+                if (action === 'display') {
+                    this.displaySource(sid);
+                } else if (action === 'hide') {
+                    this.hideSource(sid);
+                }
+            };
+            
+            container.appendChild(card);
+        });
+    },
+    
+    renderDevices() {
+        const container = $('device-list');
+        
+        if (State.connections.size === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-plug"></i>
+                    <p>No devices connected</p>
+                    <span>Share your Room ID</span>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = '';
         
         State.connections.forEach((conn, peerId) => {
             const card = document.createElement('div');
             card.className = 'device-card';
-            card.dataset.peerId = peerId;
             
-            const info = conn.info || {};
-            const activeStreams = conn.activeStreams || [];
+            const sourceCount = this.countSourcesFromPeer(peerId);
             
             card.innerHTML = `
-                <div class="device-card-header">
-                    <div class="device-icon">
-                        <i class="fas ${info.icon || 'fa-desktop'}"></i>
-                    </div>
-                    <div class="device-info">
-                        <div class="device-name">${info.type || 'Device'}</div>
-                        <div class="device-status">Connected</div>
-                    </div>
-                    <div class="device-expand">
-                        <i class="fas fa-chevron-down"></i>
-                    </div>
+                <div class="device-icon">
+                    <i class="fas ${conn.info?.icon || 'fa-desktop'}"></i>
                 </div>
-                <div class="device-sources">
-                    ${activeStreams.length > 0 ? `
-                        <div class="source-label">Active Streams</div>
-                        <div class="active-streams">
-                            ${activeStreams.map(s => `
-                                <div class="active-stream" data-stream-id="${s.id}">
-                                    <div class="active-stream-info">
-                                        <i class="fas ${s.type === 'camera' ? 'fa-video' : 'fa-window-maximize'}"></i>
-                                        <span>${s.type === 'camera' ? 'Camera' : 'Window'}</span>
-                                    </div>
-                                    <button class="stream-stop" data-stream-id="${s.id}" data-peer-id="${peerId}">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            `).join('')}
-                        </div>
-                    ` : ''}
-                    <div class="source-label">Request Source</div>
-                    <button class="source-btn" data-type="camera" data-peer-id="${peerId}">
-                        <i class="fas fa-video"></i>
-                        <span>Request Camera</span>
-                    </button>
-                    <button class="source-btn" data-type="window" data-peer-id="${peerId}">
-                        <i class="fas fa-window-maximize"></i>
-                        <span>Request Window</span>
-                    </button>
-                    <button class="device-disconnect" data-peer-id="${peerId}">
-                        <i class="fas fa-plug"></i>
-                        Disconnect
-                    </button>
+                <div class="device-info">
+                    <div class="device-name">${conn.info?.type || 'Device'}</div>
+                    <div class="device-status">Connected</div>
+                    <div class="device-sources-count">${sourceCount} source${sourceCount !== 1 ? 's' : ''} shared</div>
                 </div>
+                <button class="device-kick" data-peer-id="${peerId}" title="Disconnect">
+                    <i class="fas fa-times"></i>
+                </button>
             `;
             
-            // Toggle expand
-            card.querySelector('.device-card-header').onclick = () => {
-                card.classList.toggle('expanded');
-            };
-            
-            // Source request buttons
-            card.querySelectorAll('.source-btn').forEach(btn => {
-                btn.onclick = async (e) => {
-                    e.stopPropagation();
-                    const type = btn.dataset.type;
-                    const pid = btn.dataset.peerId;
-                    
-                    btn.classList.add('loading');
-                    btn.innerHTML = `<div class="spinner"></div><span>Requesting...</span>`;
-                    
-                    try {
-                        await Connection.requestSource(pid, type);
-                    } catch (err) {
-                        Toast.error('Request denied or failed');
-                    }
-                    
-                    btn.classList.remove('loading');
-                    btn.innerHTML = `<i class="fas ${type === 'camera' ? 'fa-video' : 'fa-window-maximize'}"></i><span>Request ${type === 'camera' ? 'Camera' : 'Window'}</span>`;
-                };
-            });
-            
-            // Stop stream buttons
-            card.querySelectorAll('.stream-stop').forEach(btn => {
-                btn.onclick = (e) => {
-                    e.stopPropagation();
-                    const streamId = btn.dataset.streamId;
-                    const pid = btn.dataset.peerId;
-                    Connection.stopRemoteStream(pid, streamId);
-                };
-            });
-            
-            // Disconnect button
-            card.querySelector('.device-disconnect').onclick = (e) => {
-                e.stopPropagation();
+            card.querySelector('.device-kick').onclick = () => {
                 Connection.removePeer(peerId);
             };
             
-            list.appendChild(card);
+            container.appendChild(card);
+        });
+    },
+    
+    isSourceDisplayed(sourceId) {
+        for (const [id, box] of State.videoBoxes) {
+            if (box.sourceId === sourceId) return true;
+        }
+        return false;
+    },
+    
+    countSourcesFromPeer(peerId) {
+        let count = 0;
+        State.pendingSources.forEach(source => {
+            if (source.peerId === peerId) count++;
+        });
+        return count;
+    },
+    
+    displaySource(sourceId) {
+        const source = State.pendingSources.get(sourceId);
+        if (!source) return;
+        
+        const boxId = VideoBox.create(source.stream, {
+            label: `${source.deviceInfo?.type || 'Remote'} - ${source.type === 'camera' ? 'Camera' : 'Window'}`,
+            icon: source.type === 'camera' ? 'fa-video' : 'fa-window-maximize',
+            type: 'remote',
+            sourceId: sourceId,
+            peerId: source.peerId,
+            mirror: source.type === 'camera'
+        });
+        
+        // Notify guest that source is now live
+        Connection.send(source.peerId, {
+            type: 'source-status',
+            sourceId: sourceId,
+            status: 'live'
+        });
+        
+        this.render();
+        Toast.success('Source added to canvas');
+    },
+    
+    hideSource(sourceId) {
+        // Find and remove the video box
+        State.videoBoxes.forEach((box, boxId) => {
+            if (box.sourceId === sourceId) {
+                VideoBox.remove(boxId);
+            }
+        });
+        
+        const source = State.pendingSources.get(sourceId);
+        if (source) {
+            // Notify guest that source is hidden
+            Connection.send(source.peerId, {
+                type: 'source-status',
+                sourceId: sourceId,
+                status: 'hidden'
+            });
+        }
+        
+        this.render();
+    }
+};
+
+// ========================================
+// Guest Panel Manager
+// ========================================
+const GuestPanel = {
+    init() {
+        guestPanel = createGuestPanel();
+        guestToolbar = createGuestToolbar();
+        
+        $('close-guest-panel').onclick = () => this.hide();
+        $('open-guest-panel').onclick = () => this.show();
+        
+        $('submit-camera').onclick = () => this.submitSource('camera');
+        $('submit-window').onclick = () => this.submitSource('window');
+    },
+    
+    show() {
+        guestPanel.classList.remove('hidden');
+        this.render();
+    },
+    
+    hide() {
+        guestPanel.classList.add('hidden');
+    },
+    
+    async submitSource(type) {
+        let stream;
+        
+        try {
+            if (type === 'camera') {
+                stream = await Media.getCamera({ audio: true });
+            } else {
+                stream = await Media.getWindow(false);
+            }
+            
+            if (!stream) return;
+            
+            const sourceId = 'src-' + Utils.genId(8);
+            
+            // Store locally
+            State.localStreams.set(sourceId, {
+                stream,
+                type,
+                status: 'pending'
+            });
+            
+            // Send stream to host
+            const call = State.peer.call(State.hostPeerId, stream, {
+                metadata: {
+                    sourceId,
+                    type,
+                    deviceInfo: Utils.deviceInfo()
+                }
+            });
+            
+            // Notify host about new source
+            Connection.send(State.hostPeerId, {
+                type: 'source-submitted',
+                sourceId,
+                sourceType: type,
+                deviceInfo: Utils.deviceInfo()
+            });
+            
+            // Handle stream end
+            stream.getTracks().forEach(track => {
+                track.onended = () => {
+                    this.stopSource(sourceId);
+                };
+            });
+            
+            this.render();
+            Toast.success(`${type === 'camera' ? 'Camera' : 'Window'} shared with host`);
+            
+        } catch (err) {
+            console.error('Submit source error:', err);
+            Toast.error('Failed to share ' + type);
+        }
+    },
+    
+    stopSource(sourceId) {
+        const source = State.localStreams.get(sourceId);
+        if (!source) return;
+        
+        // Stop tracks
+        source.stream.getTracks().forEach(t => t.stop());
+        
+        // Notify host
+        if (State.hostPeerId) {
+            Connection.send(State.hostPeerId, {
+                type: 'source-stopped',
+                sourceId
+            });
+        }
+        
+        State.localStreams.delete(sourceId);
+        this.render();
+        
+        Toast.info('Source stopped');
+    },
+    
+    updateSourceStatus(sourceId, status) {
+        const source = State.localStreams.get(sourceId);
+        if (source) {
+            source.status = status;
+            this.render();
+        }
+    },
+    
+    render() {
+        const container = $('my-sources');
+        
+        if (State.localStreams.size === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        container.innerHTML = '<div class="source-label" style="margin-top:0;">Your Shared Sources</div>';
+        
+        State.localStreams.forEach((source, sourceId) => {
+            const item = document.createElement('div');
+            item.className = 'submitted-source';
+            item.innerHTML = `
+                <div class="submitted-source-icon">
+                    <i class="fas ${source.type === 'camera' ? 'fa-video' : 'fa-window-maximize'}"></i>
+                </div>
+                <div class="submitted-source-info">
+                    <div class="submitted-source-name">${source.type === 'camera' ? 'Camera' : 'Window'}</div>
+                    <div class="submitted-source-status ${source.status === 'live' ? 'live' : ''}">
+                        ${source.status === 'live' ? '● Live on host screen' : 
+                          source.status === 'hidden' ? 'Hidden by host' : 'Waiting for host...'}
+                    </div>
+                </div>
+                <button class="submitted-source-stop" data-source-id="${sourceId}" title="Stop sharing">
+                    <i class="fas fa-stop"></i>
+                </button>
+            `;
+            
+            item.querySelector('.submitted-source-stop').onclick = () => {
+                this.stopSource(sourceId);
+            };
+            
+            container.appendChild(item);
         });
     }
 };
@@ -871,7 +1322,7 @@ const VideoBox = {
             stream, 
             opts, 
             muted: !!opts.muted,
-            streamId: opts.streamId,
+            sourceId: opts.sourceId,
             peerId: opts.peerId
         });
 
@@ -1219,30 +1670,31 @@ const VideoBox = {
         const data = State.videoBoxes.get(id);
         if (!data) return;
 
+        // If this is a displayed remote source, update host panel
+        if (data.sourceId) {
+            const source = State.pendingSources.get(data.sourceId);
+            if (source) {
+                Connection.send(source.peerId, {
+                    type: 'source-status',
+                    sourceId: data.sourceId,
+                    status: 'hidden'
+                });
+            }
+        }
+
         // If local stream, stop it
         if (data.opts.isLocal) {
             data.stream.getTracks().forEach(t => t.stop());
-            State.localStreams.delete(data.streamId);
-        }
-        
-        // If remote stream, notify
-        if (data.peerId && data.streamId) {
-            Connection.send(data.peerId, {
-                type: 'stream-stopped',
-                streamId: data.streamId
-            });
-            
-            // Update connection's active streams
-            const conn = State.connections.get(data.peerId);
-            if (conn && conn.activeStreams) {
-                conn.activeStreams = conn.activeStreams.filter(s => s.id !== data.streamId);
-                DevicePanel.render();
-            }
+            State.localStreams.delete(data.opts.streamId);
         }
 
         data.el.remove();
         State.videoBoxes.delete(id);
         if (State.activeBox === id) State.activeBox = null;
+        
+        if (State.isHost) {
+            HostPanel.render();
+        }
     },
 
     removeAll() {
@@ -1255,20 +1707,6 @@ const VideoBox = {
             data.el.classList.toggle('no-border', !State.settings.showBorders);
             data.el.classList.toggle('no-radius', !State.settings.roundedCorners);
         });
-    },
-    
-    findByStream(stream) {
-        for (const [id, data] of State.videoBoxes) {
-            if (data.stream === stream) return id;
-        }
-        return null;
-    },
-    
-    findByStreamId(streamId) {
-        for (const [id, data] of State.videoBoxes) {
-            if (data.streamId === streamId) return id;
-        }
-        return null;
     }
 };
 
@@ -1379,7 +1817,7 @@ const Media = {
 };
 
 // ========================================
-// Connection Manager with Source Requests
+// Connection Manager
 // ========================================
 const Connection = {
     async init() {
@@ -1403,7 +1841,12 @@ const Connection = {
             State.peer.on('error', err => {
                 clearTimeout(timeout);
                 console.error('Peer error:', err);
-                Toast.error('Connection error');
+                
+                if (err.type === 'peer-unavailable') {
+                    Toast.error('Host not found');
+                } else {
+                    Toast.error('Connection error');
+                }
             });
 
             State.peer.on('connection', conn => this.handleData(conn));
@@ -1416,14 +1859,20 @@ const Connection = {
         });
     },
 
-    connect(remoteId) {
-        if (!State.peer || remoteId === State.peerId) return;
-        if (State.connections.has(remoteId)) return Toast.info('Already connected');
-
-        const conn = State.peer.connect(remoteId, {
+    connectToHost(hostPeerId) {
+        if (!State.peer) return;
+        
+        State.hostPeerId = hostPeerId;
+        
+        const conn = State.peer.connect(hostPeerId, {
             reliable: true,
-            metadata: { info: Utils.deviceInfo(), room: State.roomId }
+            metadata: { 
+                info: Utils.deviceInfo(), 
+                room: State.roomId,
+                isGuest: true
+            }
         });
+        
         this.handleData(conn);
     },
 
@@ -1431,23 +1880,26 @@ const Connection = {
         const pid = conn.peer;
 
         conn.on('open', () => {
+            const isGuest = conn.metadata?.isGuest;
+            
             State.connections.set(pid, { 
                 data: conn, 
                 info: conn.metadata?.info || {},
-                mediaConnections: new Map(),
-                activeStreams: []
-            });
-            this.updateCount();
-            DevicePanel.render();
-
-            conn.send({ 
-                type: 'info', 
-                info: Utils.deviceInfo(), 
-                room: State.roomId,
-                isHost: State.isHost
+                isGuest: isGuest
             });
             
-            Toast.success(`${conn.metadata?.info?.type || 'Device'} connected`);
+            this.updateCount();
+            
+            if (State.isHost) {
+                // Host: send welcome
+                conn.send({ 
+                    type: 'welcome',
+                    hostId: State.peerId
+                });
+                
+                Toast.success(`${conn.metadata?.info?.type || 'Device'} connected`);
+                HostPanel.render();
+            }
         });
 
         conn.on('data', data => this.handleMessage(pid, data));
@@ -1455,250 +1907,80 @@ const Connection = {
     },
 
     handleCall(call) {
-        call.answer();
+        if (!State.isHost) return; // Only host receives calls
+        
+        call.answer(); // Host automatically answers
         
         call.on('stream', stream => {
             const meta = call.metadata || {};
-            const streamId = meta.streamId || 'stream-' + Date.now();
+            const sourceId = meta.sourceId;
             
-            // Create video box for incoming stream
-            const boxId = VideoBox.create(stream, {
-                label: `${meta.info?.type || 'Remote'} - ${meta.sourceType === 'camera' ? 'Camera' : 'Window'}`,
-                icon: meta.sourceType === 'camera' ? 'fa-video' : 'fa-window-maximize',
-                type: 'remote',
+            // Store as pending source for host to display
+            State.pendingSources.set(sourceId, {
+                stream,
+                type: meta.type,
                 peerId: call.peer,
-                streamId: streamId
+                deviceInfo: meta.deviceInfo,
+                mediaConn: call
             });
             
-            // Track active stream
-            const conn = State.connections.get(call.peer);
-            if (conn) {
-                if (!conn.activeStreams) conn.activeStreams = [];
-                conn.activeStreams.push({
-                    id: streamId,
-                    type: meta.sourceType || 'unknown',
-                    boxId
-                });
-                conn.mediaConnections.set(streamId, call);
-                DevicePanel.render();
-            }
+            Toast.info('New source available');
+            HostPanel.render();
         });
     },
 
-    async handleMessage(pid, data) {
-        const conn = State.connections.get(pid);
+    handleMessage(pid, data) {
         if (!data || !data.type) return;
 
         switch (data.type) {
-            case 'info':
-                if (conn) {
-                    conn.info = data.info;
-                    DevicePanel.render();
+            case 'welcome':
+                // Guest received welcome from host
+                State.hostPeerId = data.hostId;
+                Toast.success('Connected to host');
+                break;
+
+            case 'source-submitted':
+                // Host: guest submitted a new source (notification only, stream comes via call)
+                Toast.info(`New ${data.sourceType} from ${data.deviceInfo?.type || 'device'}`);
+                break;
+
+            case 'source-stopped':
+                // Host: guest stopped a source
+                this.handleSourceStopped(pid, data.sourceId);
+                break;
+
+            case 'source-status':
+                // Guest: host updated source status
+                if (!State.isHost) {
+                    GuestPanel.updateSourceStatus(data.sourceId, data.status);
                 }
                 break;
 
-            case 'request-source':
-                // Remote host is requesting a source from us
-                await this.handleSourceRequest(pid, data);
-                break;
-
-            case 'source-response':
-                // Response to our source request
-                this.handleSourceResponse(pid, data);
-                break;
-
-            case 'stream-stopped':
-                // Remote stopped a stream
-                this.handleStreamStopped(pid, data);
-                break;
-
-            case 'stop-stream':
-                // Host wants us to stop a stream
-                this.handleStopStreamRequest(pid, data);
+            case 'kick':
+                // Guest: kicked by host
+                Toast.warning('Disconnected by host');
+                setTimeout(() => location.reload(), 2000);
                 break;
         }
     },
 
-    async handleSourceRequest(pid, data) {
-        const { requestId, sourceType } = data;
+    handleSourceStopped(peerId, sourceId) {
+        // Remove from pending sources
+        const source = State.pendingSources.get(sourceId);
+        if (source) {
+            source.mediaConn?.close();
+            State.pendingSources.delete(sourceId);
+        }
         
-        // Show request modal to user
-        RequestModal.show(
-            sourceType,
-            State.connections.get(pid)?.info?.type || 'Host',
-            async () => {
-                // User accepted
-                let stream;
-                try {
-                    if (sourceType === 'camera') {
-                        stream = await Media.getCamera({ audio: true });
-                    } else {
-                        stream = await Media.getWindow(false);
-                    }
-                    
-                    if (stream) {
-                        const streamId = 'stream-' + (++State.streamCounter);
-                        
-                        // Store locally
-                        State.localStreams.set(streamId, {
-                            stream,
-                            type: sourceType,
-                            forPeer: pid
-                        });
-                        
-                        // Send stream to requester
-                        const call = State.peer.call(pid, stream, {
-                            metadata: {
-                                streamId,
-                                sourceType,
-                                info: Utils.deviceInfo()
-                            }
-                        });
-                        
-                        // Handle stream end
-                        stream.getTracks().forEach(track => {
-                            track.onended = () => {
-                                this.send(pid, {
-                                    type: 'stream-stopped',
-                                    streamId
-                                });
-                                State.localStreams.delete(streamId);
-                            };
-                        });
-                        
-                        // Send success response
-                        this.send(pid, {
-                            type: 'source-response',
-                            requestId,
-                            success: true,
-                            streamId
-                        });
-                        
-                        Toast.success(`Sharing ${sourceType}`);
-                    } else {
-                        this.send(pid, {
-                            type: 'source-response',
-                            requestId,
-                            success: false,
-                            error: 'Failed to get media'
-                        });
-                    }
-                } catch (err) {
-                    this.send(pid, {
-                        type: 'source-response',
-                        requestId,
-                        success: false,
-                        error: err.message
-                    });
-                }
-            },
-            () => {
-                // User denied
-                this.send(pid, {
-                    type: 'source-response',
-                    requestId,
-                    success: false,
-                    error: 'User denied request'
-                });
+        // Remove video box if displayed
+        State.videoBoxes.forEach((box, boxId) => {
+            if (box.sourceId === sourceId) {
+                VideoBox.remove(boxId);
             }
-        );
-    },
-
-    handleSourceResponse(pid, data) {
-        const { requestId, success, error } = data;
-        const pending = State.pendingRequests.get(requestId);
-        
-        if (pending) {
-            if (success) {
-                pending.resolve(data);
-            } else {
-                pending.reject(new Error(error || 'Request failed'));
-            }
-            State.pendingRequests.delete(requestId);
-        }
-    },
-
-    handleStreamStopped(pid, data) {
-        const { streamId } = data;
-        
-        // Find and remove the video box
-        const boxId = VideoBox.findByStreamId(streamId);
-        if (boxId) {
-            VideoBox.remove(boxId);
-        }
-        
-        // Update connection's active streams
-        const conn = State.connections.get(pid);
-        if (conn && conn.activeStreams) {
-            conn.activeStreams = conn.activeStreams.filter(s => s.id !== streamId);
-            DevicePanel.render();
-        }
-        
-        Toast.info('Remote stream ended');
-    },
-
-    handleStopStreamRequest(pid, data) {
-        const { streamId } = data;
-        const localStream = State.localStreams.get(streamId);
-        
-        if (localStream) {
-            localStream.stream.getTracks().forEach(t => t.stop());
-            State.localStreams.delete(streamId);
-            Toast.info('Stream stopped by host');
-        }
-    },
-
-    async requestSource(peerId, sourceType) {
-        return new Promise((resolve, reject) => {
-            const requestId = 'req-' + Utils.genId(8);
-            
-            State.pendingRequests.set(requestId, { resolve, reject });
-            
-            this.send(peerId, {
-                type: 'request-source',
-                requestId,
-                sourceType
-            });
-            
-            // Timeout after 60 seconds
-            setTimeout(() => {
-                if (State.pendingRequests.has(requestId)) {
-                    State.pendingRequests.delete(requestId);
-                    reject(new Error('Request timeout'));
-                }
-            }, 60000);
-        });
-    },
-
-    stopRemoteStream(peerId, streamId) {
-        // Notify remote to stop the stream
-        this.send(peerId, {
-            type: 'stop-stream',
-            streamId
         });
         
-        // Find and remove local video box
-        const boxId = VideoBox.findByStreamId(streamId);
-        if (boxId) {
-            const data = State.videoBoxes.get(boxId);
-            if (data) {
-                data.el.remove();
-                State.videoBoxes.delete(boxId);
-            }
-        }
-        
-        // Update connection's active streams
-        const conn = State.connections.get(peerId);
-        if (conn) {
-            const mc = conn.mediaConnections.get(streamId);
-            if (mc) mc.close();
-            conn.mediaConnections.delete(streamId);
-            
-            if (conn.activeStreams) {
-                conn.activeStreams = conn.activeStreams.filter(s => s.id !== streamId);
-            }
-            DevicePanel.render();
-        }
+        HostPanel.render();
+        Toast.info('Source stopped');
     },
 
     send(peerId, data) {
@@ -1716,24 +1998,40 @@ const Connection = {
 
     removePeer(pid) {
         const conn = State.connections.get(pid);
+        
         if (conn) {
             conn.data?.close();
-            conn.mediaConnections?.forEach(mc => mc.close());
-            
-            // Remove all video boxes from this peer
-            State.videoBoxes.forEach((data, id) => {
-                if (data.peerId === pid) {
-                    data.el.remove();
-                    State.videoBoxes.delete(id);
-                }
-            });
         }
+        
+        // Remove all sources from this peer
+        State.pendingSources.forEach((source, sourceId) => {
+            if (source.peerId === pid) {
+                source.mediaConn?.close();
+                State.pendingSources.delete(sourceId);
+                
+                // Remove displayed video box
+                State.videoBoxes.forEach((box, boxId) => {
+                    if (box.sourceId === sourceId) {
+                        box.el.remove();
+                        State.videoBoxes.delete(boxId);
+                    }
+                });
+            }
+        });
         
         State.connections.delete(pid);
         this.updateCount();
-        DevicePanel.render();
+        
+        if (State.isHost) {
+            HostPanel.render();
+        }
 
         Toast.info('Device disconnected');
+    },
+
+    kickPeer(peerId) {
+        this.send(peerId, { type: 'kick' });
+        setTimeout(() => this.removePeer(peerId), 500);
     },
 
     updateCount() {
@@ -1741,9 +2039,20 @@ const Connection = {
     }
 };
 
+// ========================================
+// UI Setup
+// ========================================
 const UI = {
     init() {
-        DevicePanel.init();
+        injectStyles();
+        
+        if (State.isHost) {
+            HostPanel.init();
+        } else {
+            GuestPanel.init();
+            document.body.classList.add('guest-mode');
+        }
+        
         this.bindToolbar();
         this.bindModals();
         this.bindSettings();
@@ -1751,6 +2060,8 @@ const UI = {
     },
 
     bindToolbar() {
+        if (!State.isHost) return; // Guests don't have the main toolbar
+        
         DOM.addSourceBtn.onclick = () => {
             this.resetSourceModal();
             Modal.open(DOM.sourceModal);
@@ -1764,7 +2075,7 @@ const UI = {
 
         DOM.clearAllBtn.onclick = () => {
             if (State.videoBoxes.size) {
-                Modal.confirm('Remove all sources?', () => VideoBox.removeAll());
+                Modal.confirm('Remove all sources from canvas?', () => VideoBox.removeAll());
             }
         };
 
@@ -1806,6 +2117,7 @@ const UI = {
             };
         });
 
+        // Host's local source creation
         DOM.startCameraBtn.onclick = async () => {
             const stream = await Media.getCamera({
                 videoId: DOM.cameraSelect.value,
@@ -1823,7 +2135,7 @@ const UI = {
                 });
                 
                 VideoBox.create(stream, {
-                    label: 'Camera',
+                    label: 'My Camera',
                     icon: 'fa-video',
                     type: 'camera',
                     mirror: DOM.mirrorVideo.checked,
@@ -1833,18 +2145,6 @@ const UI = {
                 });
 
                 Modal.close(DOM.sourceModal);
-
-                // Share with connected peers
-                State.connections.forEach((conn, pid) => {
-                    const call = State.peer.call(pid, stream, {
-                        metadata: {
-                            streamId,
-                            sourceType: 'camera',
-                            info: Utils.deviceInfo()
-                        }
-                    });
-                    conn.mediaConnections.set(streamId, call);
-                });
             }
         };
 
@@ -1861,7 +2161,7 @@ const UI = {
                 });
                 
                 const boxId = VideoBox.create(stream, {
-                    label: 'Window',
+                    label: 'My Window',
                     icon: 'fa-window-maximize',
                     type: 'window',
                     muted: true,
@@ -1875,18 +2175,6 @@ const UI = {
                 };
 
                 Modal.close(DOM.sourceModal);
-
-                // Share with connected peers
-                State.connections.forEach((conn, pid) => {
-                    const call = State.peer.call(pid, stream, {
-                        metadata: {
-                            streamId,
-                            sourceType: 'window',
-                            info: Utils.deviceInfo()
-                        }
-                    });
-                    conn.mediaConnections.set(streamId, call);
-                });
             }
         };
 
@@ -1922,9 +2210,10 @@ const UI = {
             if (e.key === 'Escape') {
                 Modal.closeAll();
                 ContextMenu.hide();
-                DevicePanel.hide();
+                if (State.isHost) HostPanel.hide();
+                else GuestPanel.hide();
             }
-            if (e.key === 'Delete' && State.activeBox && !e.target.closest('input')) {
+            if (e.key === 'Delete' && State.activeBox && !e.target.closest('input') && State.isHost) {
                 VideoBox.remove(State.activeBox);
             }
         });
@@ -2017,12 +2306,23 @@ const UI = {
     }
 };
 
+// ========================================
+// Initialize
+// ========================================
 async function init() {
     const params = new URLSearchParams(location.search);
-    State.roomId = params.get('room')?.toUpperCase() || Utils.genRoomId();
-    State.isHost = !params.get('room');
-
-    if (!params.get('room')) {
+    const roomParam = params.get('room')?.toUpperCase();
+    
+    // Determine if this is host or guest
+    if (roomParam) {
+        // Joining existing room = Guest
+        State.roomId = roomParam;
+        State.isHost = false;
+    } else {
+        // Creating new room = Host
+        State.roomId = Utils.genRoomId();
+        State.isHost = true;
+        
         const url = new URL(location);
         url.searchParams.set('room', State.roomId);
         history.replaceState({}, '', url);
@@ -2034,16 +2334,124 @@ async function init() {
 
     try {
         await Connection.init();
-        Toast.success('Connected');
+        
+        if (State.isHost) {
+            // Host uses their peer ID as the "room host"
+            // Store hostPeerId in URL or use room-based lookup
+            console.log('Host ready. Peer ID:', State.peerId);
+            Toast.success('Room created');
+            
+            DOM.toolbar.classList.add('visible');
+            setTimeout(() => DOM.toolbar.classList.remove('visible'), 2500);
+        } else {
+            // Guest needs to connect to host
+            // For simplicity, we encode host peer ID in the room somehow
+            // Or guests connect using a known pattern
+            const hostPeerId = 'dh-host-' + State.roomId.replace('-', '');
+            
+            // Wait a moment then try connecting
+            setTimeout(() => {
+                Connection.connectToHost(hostPeerId);
+            }, 1000);
+            
+            Toast.info('Connecting to host...');
+        }
+        
     } catch (err) {
         console.error('Init error:', err);
         Toast.error('Connection failed');
     }
+}
 
-    DOM.toolbar.classList.add('visible');
-    setTimeout(() => DOM.toolbar.classList.remove('visible'), 2500);
+// For hosts, create with a predictable ID based on room
+async function initAsHost() {
+    return new Promise((resolve, reject) => {
+        const hostId = 'dh-host-' + State.roomId.replace('-', '');
+
+        State.peer = new Peer(hostId, {
+            debug: 1,
+            config: { iceServers: CONFIG.iceServers }
+        });
+
+        const timeout = setTimeout(() => reject(new Error('Timeout')), 15000);
+
+        State.peer.on('open', pid => {
+            clearTimeout(timeout);
+            State.peerId = pid;
+            DOM.statusBadge.classList.add('connected');
+            resolve(pid);
+        });
+
+        State.peer.on('error', err => {
+            clearTimeout(timeout);
+            console.error('Peer error:', err);
+            
+            if (err.type === 'unavailable-id') {
+                // Room already exists, join as guest instead
+                State.isHost = false;
+                document.body.classList.add('guest-mode');
+                Connection.init().then(() => {
+                    const hostPeerId = 'dh-host-' + State.roomId.replace('-', '');
+                    Connection.connectToHost(hostPeerId);
+                });
+            } else {
+                Toast.error('Connection error');
+            }
+        });
+
+        State.peer.on('connection', conn => Connection.handleData(conn));
+        State.peer.on('call', call => Connection.handleCall(call));
+
+        State.peer.on('disconnected', () => {
+            DOM.statusBadge.classList.remove('connected');
+            setTimeout(() => State.peer?.reconnect?.(), 3000);
+        });
+    });
+}
+
+async function start() {
+    const params = new URLSearchParams(location.search);
+    const roomParam = params.get('room')?.toUpperCase();
+    
+    if (roomParam) {
+        State.roomId = roomParam;
+        State.isHost = false;
+    } else {
+        State.roomId = Utils.genRoomId();
+        State.isHost = true;
+        
+        const url = new URL(location);
+        url.searchParams.set('room', State.roomId);
+        history.replaceState({}, '', url);
+    }
+
+    DOM.roomId.textContent = State.roomId;
+
+    UI.init();
+
+    try {
+        if (State.isHost) {
+            await initAsHost();
+            Toast.success('Room created');
+            
+            DOM.toolbar.classList.add('visible');
+            setTimeout(() => DOM.toolbar.classList.remove('visible'), 2500);
+        } else {
+            await Connection.init();
+            
+            const hostPeerId = 'dh-host-' + State.roomId.replace('-', '');
+            setTimeout(() => {
+                Connection.connectToHost(hostPeerId);
+            }, 500);
+            
+            Toast.info('Connecting to host...');
+        }
+    } catch (err) {
+        console.error('Init error:', err);
+        Toast.error('Connection failed');
+    }
 }
 
 document.readyState === 'loading'
-    ? document.addEventListener('DOMContentLoaded', init)
-    : init();
+    ? document.addEventListener('DOMContentLoaded', start)
+    : start();
