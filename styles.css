@@ -21,7 +21,8 @@
     --text-secondary: #9ca3af;
     --text-muted: #6b7280;
 
-    --accent: #dc2626;         /* Dark red */
+    /* Dark red accent */
+    --accent: #dc2626;
     --accent-hover: #b91c1c;
     --accent-soft: rgba(220, 38, 38, 0.18);
 
@@ -50,6 +51,17 @@ html, body {
 
 body {
     overflow: hidden;
+}
+
+button {
+    font-family: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+input {
+    font-family: inherit;
 }
 
 /* Utility */
@@ -261,9 +273,16 @@ body {
 .host-screen {
     background: radial-gradient(circle at top, #020617 0, #000 65%);
     flex-direction: column;
+    overflow: hidden;
 }
 
-/* Top bar & toolbar initially hidden on desktop to keep blank canvas */
+/* Top bar & toolbar overlay above videos */
+.top-bar,
+.toolbar {
+    z-index: 150;
+}
+
+/* Hide bars initially on desktop (blank canvas) */
 .top-bar,
 .toolbar {
     opacity: 0;
@@ -279,20 +298,23 @@ body {
     transform: translateY(100%);
 }
 
-/* Reveal on hover for desktop */
-.host-screen:hover .top-bar,
-.host-screen:hover .toolbar {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(0);
+/* On desktop: show when user hovers anywhere */
+@media (hover: hover) and (pointer: fine) {
+    .host-screen:hover .top-bar,
+    .host-screen:hover .toolbar {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+    }
 }
 
+/* On mobile: always visible */
 @media (max-width: 768px) {
     .host-screen .top-bar,
     .host-screen .toolbar {
         opacity: 1;
         pointer-events: auto;
-        transform: none;
+        transform: translateY(0);
     }
 }
 
@@ -384,8 +406,10 @@ body {
     flex: 1;
     width: 100%;
     position: relative;
+    overflow: hidden;
 }
 
+/* Canvas covers full viewport (bars overlay) */
 .canvas {
     position: absolute;
     inset: 0;
@@ -393,7 +417,7 @@ body {
     overflow: hidden;
 }
 
-/* Toolbar */
+/* Bottom toolbar */
 .toolbar {
     height: 60px;
     padding: 8px 12px;
@@ -1028,6 +1052,7 @@ body {
     justify-content: center;
     touch-action: none;
     transition: box-shadow 0.12s ease-out, border-color 0.12s ease-out;
+    z-index: 10;
 }
 
 .video-box.active {
@@ -1112,13 +1137,8 @@ body {
     transition: all var(--transition);
 }
 
-.video-control-btn:hover {
-    background: rgba(31, 41, 55, 0.95);
-}
-
-.video-control-btn:active {
-    transform: scale(0.9);
-}
+.video-control-btn:hover { background: rgba(31, 41, 55, 0.95); }
+.video-control-btn:active { transform: scale(0.9); }
 
 .audio-indicator {
     position: absolute;
@@ -1360,9 +1380,7 @@ body {
         gap: 6px;
         justify-content: center;
     }
-    .toolbar-btn span {
-        display: none;
-    }
+    .toolbar-btn span { display: none; }
 
     .host-panel {
         top: auto;
