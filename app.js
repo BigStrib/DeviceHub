@@ -214,8 +214,8 @@ const SettingsUI = {
     init() {
         const panel = $('settings-panel');
         const open  = $('host-settings-btn');
-        theclose = $('settings-close-btn');
-        if (!panel || !open || !theclose) return;
+        const close = $('settings-close-btn');
+        if (!panel || !open || !close) return;
 
         const sb = $('set-show-borders');
         const sl = $('set-show-labels');
@@ -231,7 +231,7 @@ const SettingsUI = {
         bg.value   = s.bgColor;
 
         open.onclick  = () => panel.classList.toggle('hidden');
-        theclose.onclick = () => panel.classList.add('hidden');
+        close.onclick = () => panel.classList.add('hidden');
 
         sb.onchange = () => { s.showBorders = sb.checked; this.applyAll(); this.save(); };
         sl.onchange = () => { s.showLabels  = sl.checked; this.applyAll(); this.save(); };
@@ -335,13 +335,15 @@ const VideoBox = {
             data.el.classList.add('dragging');
             const r = data.el.getBoundingClientRect();
             const p = Utils.getPointer(e);
+            const canvasRect = $('canvas').getBoundingClientRect();
             State.interaction = {
                 type: 'move',
                 id,
                 startX: p.x,
                 startY: p.y,
                 origLeft: r.left,
-                origTop: r.top
+                origTop: r.top,
+                canvasRect
             };
             document.addEventListener('mousemove', this.onMove);
             document.addEventListener('mouseup', this.endMove);
@@ -375,6 +377,7 @@ const VideoBox = {
                 data.el.classList.add('resizing');
                 const r = data.el.getBoundingClientRect();
                 const p = Utils.getPointer(e);
+                const canvasRect = $('canvas').getBoundingClientRect();
                 let dir = '';
                 const cls = handle.className;
                 if (cls.includes('nw')) dir = 'nw';
@@ -396,7 +399,8 @@ const VideoBox = {
                     origTop: r.top,
                     origW: r.width,
                     origH: r.height,
-                    ratio: r.width / r.height
+                    ratio: r.width / r.height,
+                    canvasRect
                 };
                 document.addEventListener('mousemove', this.onResize);
                 document.addEventListener('mouseup', this.endResize);
@@ -422,12 +426,12 @@ const VideoBox = {
         const data = State.videoBoxes.get(int.id);
         if (!data) return;
         const p = Utils.getPointer(e);
-        const rect = $('canvas').getBoundingClientRect();
+        const rect = int.canvasRect;
         const w = data.el.offsetWidth;
         const h = data.el.offsetHeight;
 
-        let x = int.origLeft + (p.x - int.startX);
-        let y = int.origTop  + (p.y - int.startY);
+        let x = int.origLeft + (p.x - int.startX) - rect.left;
+        let y = int.origTop  + (p.y - int.startY) - rect.top;
 
         x = Utils.clamp(x, 0, rect.width  - w);
         y = Utils.clamp(y, 0, rect.height - h);
@@ -459,25 +463,57 @@ const VideoBox = {
         const dx = p.x - int.startX;
         const dy = p.y - int.startY;
 
-        let { origLeft: left, origTop: top, origW: w, origH: h, ratio, dir } = int;
+        let { origLeft: left, origTop: top, origW: w, origH: h, ratio, dir, canvasRect } = int;
         const minW = CONFIG.minSize.width;
         const minH = CONFIG.minSize.height;
         const lock = State.settings.lockRatio;
 
         switch (dir) {
-            case 'se': w = Math.max(minW, int.origW + dx); h = lock ? w / ratio : Math.max(minH, int.origH + dy); break;
-            case 'sw': w = Math.max(minW, int.origW - dx); left = int.origLeft + int.origW - w; h = lock ? w / ratio : Math.max(minH, int.origH + dy); break;
-            case 'ne': w = Math.max(minW, int.origW + dx); h = lock ? w / ratio : Math.max(minH, int.origH - dy); top = int.origTop + int.origH - h; break;
-            case 'nw': w = Math.max(minW, int.origW - dx); left = int.origLeft + int.origW - w; h = lock ? w / ratio : Math.max(minH, int.origH - dy); top = int.origTop + int.origH - h; break;
-            case 'e':  w = Math.max(minW, int.origW + dx); if (lock) h = w / ratio; break;
-            case 'w':  w = Math.max(minW, int.origW - dx); left = int.origLeft + int.origW - w; if (lock) h = w / ratio; break;
-            case 's':  h = Math.max(minH, int.origH + dy); if (lock) w = h * ratio; break;
-            case 'n':  h = Math.max(minH, int.origH - dy); top = int.origTop + int.origH - h; if (lock) w = h * ratio; break;
+            case 'se':
+                w = Math.max(minW, int.origW + dx);
+                h = lock ? w / ratio : Math.max(minH, int.origH + dy);
+                break;
+            case 'sw':
+                w = Math.max(minW, int.origW - dx);
+                left = int.origLeft + int.origW - w;
+                h = lock ? w / ratio : Math.max(minH, int.origH + dy);
+                break;
+            case 'ne':
+                w = Math.max(minW, int.origW + dx);
+                h = lock ? w / ratio : Math.max(minH, int.origH - dy);
+                top = int.origTop + int.origH - h;
+                break;
+            case 'nw':
+                w = Math.max(minW, int.origW - dx);
+                left = int.origLeft + int.origW - w;
+                h = lock ? w / ratio : Math.max(minH, int.origH - dy);
+                top = int.origTop + int.origH - h;
+                break;
+            case 'e':
+                w = Math.max(minW, int.origW + dx);
+                if (lock) h = w / ratio;
+                break;
+            case 'w':
+                w = Math.max(minW, int.origW - dx);
+                left = int.origLeft + int.origW - w;
+                if (lock) h = w / ratio;
+                break;
+            case 's':
+                h = Math.max(minH, int.origH + dy);
+                if (lock) w = h * ratio;
+                break;
+            case 'n':
+                h = Math.max(minH, int.origH - dy);
+                top = int.origTop + int.origH - h;
+                if (lock) w = h * ratio;
+                break;
         }
 
-        const rect = $('canvas').getBoundingClientRect();
-        left = Utils.clamp(left, 0, rect.width  - w);
-        top  = Utils.clamp(top, 0, rect.height - h);
+        left -= canvasRect.left;
+        top  -= canvasRect.top;
+
+        left = Utils.clamp(left, 0, canvasRect.width  - w);
+        top  = Utils.clamp(top, 0, canvasRect.height - h);
 
         data.el.style.left = left + 'px';
         data.el.style.top  = top  + 'px';
@@ -903,12 +939,11 @@ const GuestUI = {
         $('guest-room-code').textContent = Utils.formatRoomId(State.roomId);
 
         const frontBtn = $('share-camera-btn');
-        const backBtn  = $('share-window-btn'); // back camera
-        const bothBtn  = $('share-both-btn');
+        const backBtn  = $('share-window-btn'); // back camera only
+        const bothBtn  = null; // removed
 
         if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
             backBtn.style.display = 'none';
-            bothBtn.style.display = 'none';
             frontBtn.innerHTML = '<i class="fas fa-video"></i><span>Share Camera</span>';
             frontBtn.onclick = () => this.shareCamera('any');
             return;
@@ -919,7 +954,6 @@ const GuestUI = {
             if (videos.length === 0) {
                 frontBtn.disabled = true;
                 backBtn.style.display = 'none';
-                bothBtn.style.display = 'none';
                 Toast.error('No cameras found on this device');
                 return;
             }
@@ -937,24 +971,17 @@ const GuestUI = {
 
             if (!State.guestCameras.backId) {
                 backBtn.style.display  = 'none';
-                bothBtn.style.display  = 'none';
                 frontBtn.innerHTML = '<i class="fas fa-video"></i><span>Share Camera</span>';
                 frontBtn.onclick = () => this.shareCamera('any');
             } else {
                 frontBtn.innerHTML = '<i class="fas fa-video"></i><span>Front Camera</span>';
                 backBtn.innerHTML  = '<i class="fas fa-camera-rotate"></i><span>Back Camera</span>';
-                bothBtn.innerHTML  = '<i class="fas fa-layer-group"></i><span>Front + Back</span>';
 
                 frontBtn.onclick = () => this.shareCamera('front');
                 backBtn.onclick  = () => this.shareCamera('back');
-                bothBtn.onclick  = () => {
-                    this.shareCamera('front');
-                    setTimeout(() => this.shareCamera('back'), 500);
-                };
             }
         }).catch(() => {
             backBtn.style.display  = 'none';
-            bothBtn.style.display  = 'none';
             frontBtn.innerHTML = '<i class="fas fa-video"></i><span>Share Camera</span>';
             frontBtn.onclick = () => this.shareCamera('any');
         });
@@ -1053,8 +1080,8 @@ const GuestUI = {
             const div = document.createElement('div');
             div.className = 'my-source';
             div.innerHTML = `
-                <div class="my-source-icon">
-                    <i class="fas fa-video"></i>
+                <div class="my-source-video">
+                    <video autoplay muted playsinline></video>
                 </div>
                 <div class="my-source-info">
                     <div class="my-source-name">
@@ -1070,6 +1097,8 @@ const GuestUI = {
                 </div>
                 <button class="my-source-stop"><i class="fas fa-stop"></i></button>
             `;
+            const vid = div.querySelector('video');
+            vid.srcObject = s.stream;
             div.querySelector('.my-source-stop').onclick = () => this.stop(id);
             cont.appendChild(div);
         });
@@ -1094,7 +1123,7 @@ const LoginUI = {
         hostInput.oninput  = () => format(hostInput);
         guestInput.oninput = () => format(guestInput);
 
-        // Press Enter to create/join
+        // Enter to create/join
         hostInput.addEventListener('keydown', e => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1272,7 +1301,6 @@ function bindGlobalPanelClose() {
         const settingsPanel = $('settings-panel');
         if (!hostPanel && !settingsPanel) return;
 
-        // If click is inside panels or toolbar, do nothing
         if (e.target.closest('#host-panel') ||
             e.target.closest('#settings-panel') ||
             e.target.closest('.toolbar') ||
@@ -1286,7 +1314,7 @@ function bindGlobalPanelClose() {
     });
 }
 
-// -------------------- Show/hide UI when mouse enters/leaves the page --------------------
+// -------------------- Mouse in/out to show/hide UI --------------------
 const InactivityUI = {
     init() {
         const hostScreen = $('host-screen');
@@ -1302,14 +1330,9 @@ const InactivityUI = {
             document.body.classList.add('ui-hidden');
         };
 
-        // Mouse inside the page -> show UI
         hostScreen.addEventListener('mouseenter', show);
         hostScreen.addEventListener('mousemove', show);
-
-        // Mouse leaves the page (host screen) -> hide UI instantly
         hostScreen.addEventListener('mouseleave', hide);
-
-        // Window blur/focus as backup
         window.addEventListener('blur', hide);
         window.addEventListener('focus', show);
     }

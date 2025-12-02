@@ -21,7 +21,6 @@
     --text-secondary: #9ca3af;
     --text-muted: #6b7280;
 
-    /* Dark red accent */
     --accent: #dc2626;
     --accent-hover: #b91c1c;
     --accent-soft: rgba(220, 38, 38, 0.18);
@@ -283,7 +282,7 @@ input {
     overflow: hidden;
 }
 
-/* Canvas covers entire viewport */
+/* Blank canvas */
 .canvas {
     position: absolute;
     inset: 0;
@@ -291,7 +290,7 @@ input {
     overflow: hidden;
 }
 
-/* Host room banner at top (auto-hide via .ui-hidden) */
+/* Host room banner */
 .host-room-banner {
     position: fixed;
     top: 14px;
@@ -307,10 +306,10 @@ input {
     font-size: 12px;
     color: var(--text-secondary);
     z-index: 160;
-    transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
 }
 
-/* Bottom toolbar overlays videos (auto-hide via .ui-hidden) */
+/* Toolbar */
 .toolbar {
     height: 56px;
     padding: 8px 12px;
@@ -321,59 +320,9 @@ input {
     justify-content: space-between;
     align-items: center;
     z-index: 150;
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(0);
-    transition: opacity 0.25s ease-out, transform 0.25s ease-out;
-}
-
-/* Auto-hide overlays when body has .ui-hidden (desktop) */
-body.ui-hidden .toolbar {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(100%);
-}
-
-body.ui-hidden .host-room-banner {
-    opacity: 0;
-    pointer-events: none;
-    transform: translate(-50%, -8px);
-}
-
-/* Also fade out open panels when UI hidden */
-.host-panel,
-.settings-panel {
     transition: opacity 0.2s ease-out, transform 0.2s ease-out;
 }
 
-body.ui-hidden .host-panel:not(.hidden),
-body.ui-hidden .settings-panel:not(.hidden) {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(10px);
-}
-
-/* On mobile, never auto-hide overlays */
-@media (max-width: 768px) {
-    body.ui-hidden .toolbar {
-        opacity: 1;
-        pointer-events: auto;
-        transform: translateY(0);
-    }
-    body.ui-hidden .host-room-banner {
-        opacity: 1;
-        pointer-events: auto;
-        transform: translate(-50%, 0);
-    }
-    body.ui-hidden .host-panel:not(.hidden),
-    body.ui-hidden .settings-panel:not(.hidden) {
-        opacity: 1;
-        pointer-events: auto;
-        transform: translateY(0);
-    }
-}
-
-/* Toolbar buttons */
 .toolbar-left,
 .toolbar-center,
 .toolbar-right {
@@ -413,6 +362,31 @@ body.ui-hidden .settings-panel:not(.hidden) {
     background: var(--danger);
     border-color: var(--danger-hover);
     color: #fff;
+}
+
+/* Hide overlays when body.ui-hidden (mouse off host screen) */
+body.ui-hidden .toolbar {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(100%);
+}
+
+body.ui-hidden .host-room-banner {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -8px);
+}
+
+.host-panel,
+.settings-panel {
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+body.ui-hidden .host-panel:not(.hidden),
+body.ui-hidden .settings-panel:not(.hidden) {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(10px);
 }
 
 /* ========================================
@@ -639,7 +613,6 @@ body.ui-hidden .settings-panel:not(.hidden) {
     color: #fff;
 }
 
-/* New subtle "Remove source" button */
 .source-btn.subtle {
     background: transparent;
     border: 1px solid var(--border);
@@ -676,9 +649,7 @@ body.ui-hidden .settings-panel:not(.hidden) {
     font-size: 13px;
 }
 
-.device-info {
-    flex: 1;
-}
+.device-info { flex: 1; }
 
 .device-name {
     font-size: 13px;
@@ -826,7 +797,7 @@ body.ui-hidden .settings-panel:not(.hidden) {
 
 .guest-card {
     width: 100%;
-    max-width: 400px;
+    max-width: 420px;
     background: var(--surface);
     border-radius: var(--radius-lg);
     border: 1px solid var(--border);
@@ -932,6 +903,7 @@ body.ui-hidden .settings-panel:not(.hidden) {
     margin-top: 6px;
 }
 
+/* Guest source preview */
 .my-sources-title {
     font-size: 11px;
     text-transform: uppercase;
@@ -944,25 +916,35 @@ body.ui-hidden .settings-panel:not(.hidden) {
     background: var(--surface-hover);
     border-radius: var(--radius);
     padding: 8px 10px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: 70px 1fr auto;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+        "video info btn"
+        "video info btn";
+    gap: 6px;
     margin-bottom: 6px;
-}
-
-.my-source-icon {
-    width: 26px;
-    height: 26px;
-    border-radius: 999px;
-    background: var(--accent-soft);
-    display: flex;
     align-items: center;
-    justify-content: center;
-    color: var(--accent);
-    font-size: 12px;
 }
 
-.my-source-info { flex: 1; }
+.my-source-video {
+    grid-area: video;
+    width: 70px;
+    height: 48px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #000;
+}
+
+.my-source-video video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.my-source-info {
+    grid-area: info;
+}
 
 .my-source-name {
     font-size: 12px;
@@ -977,6 +959,7 @@ body.ui-hidden .settings-panel:not(.hidden) {
 .my-source-status.live { color: var(--success); }
 
 .my-source-stop {
+    grid-area: btn;
     width: 24px;
     height: 24px;
     border-radius: 999px;
@@ -1011,6 +994,7 @@ body.ui-hidden .settings-panel:not(.hidden) {
     touch-action: none;
     transition: box-shadow 0.12s ease-out, border-color 0.12s ease-out;
     z-index: 10;
+    will-change: left, top, width, height;
 }
 
 .video-box.active {
@@ -1043,7 +1027,7 @@ body.ui-hidden .settings-panel:not(.hidden) {
 
 .video-box.mirror video { transform: scaleX(-1); }
 
-/* Label & controls (also affected by ui-hidden) */
+/* Label & controls */
 .video-label {
     position: absolute;
     bottom: 8px;
@@ -1155,7 +1139,7 @@ body.ui-hidden .settings-panel:not(.hidden) {
     opacity: 1;
 }
 
-/* Hide all box UI on inactivity */
+/* Hide box UI when ui-hidden (mouse out) */
 body.ui-hidden .video-box .video-label,
 body.ui-hidden .video-box .video-controls,
 body.ui-hidden .video-box .move-handle,
@@ -1277,9 +1261,7 @@ body.ui-hidden .video-box .audio-indicator {
     transition: opacity 0.2s ease-out, transform 0.2s ease-out;
 }
 
-/* ========================================
-   ICON BUTTON (used in panels & host banner)
-======================================== */
+/* ICON BUTTON */
 .icon-btn {
     width: 28px;
     height: 28px;

@@ -83,14 +83,13 @@
         </div>
     </section>
 
-    <!-- HOST SCREEN -->
+    <!-- HOST SCREEN (blank canvas with tiles) -->
     <section id="host-screen" class="screen host-screen hidden">
-        <!-- Full-screen canvas (blank until sources are added) -->
         <main class="host-main">
             <div id="canvas" class="canvas"></div>
         </main>
 
-        <!-- Host room banner (top center, auto-hide via inactivity) -->
+        <!-- Host room banner (auto-hide via CSS/JS) -->
         <div class="host-room-banner">
             <span>Room:</span>
             <span id="host-room-display" class="guest-room-id">---</span>
@@ -99,7 +98,7 @@
             </button>
         </div>
 
-        <!-- Bottom Toolbar (overlays canvas, auto-hide via inactivity) -->
+        <!-- Bottom Toolbar (auto-hide via CSS/JS) -->
         <footer id="toolbar" class="toolbar">
             <div class="toolbar-left">
                 <button id="open-host-panel-btn" class="toolbar-btn">
@@ -133,7 +132,7 @@
             </div>
         </footer>
 
-        <!-- HOST PANEL: Sources & Devices -->
+        <!-- HOST PANEL -->
         <aside id="host-panel" class="host-panel hidden">
             <div class="panel-header">
                 <h3>
@@ -217,7 +216,7 @@
         <div class="guest-card">
             <div class="guest-header">
                 <h2>Connected to Room</h2>
-                <p>Your camera goes only to the host. They decide what appears on the wall.</p>
+                <p>Your camera goes only to the host. You can see what you share here.</p>
                 <div class="guest-room-info">
                     <i class="fas fa-check-circle"></i>
                     <span>Room:</span>
@@ -233,17 +232,14 @@
                     <div class="guest-options">
                         <button id="share-camera-btn" class="guest-option-btn">
                             <i class="fas fa-video"></i>
-                            <span>Front Camera</span>
+                            <span>Share Camera</span>
                         </button>
                         <button id="share-window-btn" class="guest-option-btn">
                             <i class="fas fa-camera-rotate"></i>
                             <span>Back Camera</span>
                         </button>
-                        <button id="share-both-btn" class="guest-option-btn">
-                            <i class="fas fa-layer-group"></i>
-                            <span>Front + Back</span>
-                        </button>
                     </div>
+
                     <div id="guest-my-sources" class="guest-my-sources"></div>
                 </div>
             </div>
