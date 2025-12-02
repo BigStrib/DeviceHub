@@ -89,15 +89,6 @@
             <div id="canvas" class="canvas"></div>
         </main>
 
-        <!-- Host room banner (auto-hide via CSS/JS) -->
-        <div class="host-room-banner">
-            <span>Room:</span>
-            <span id="host-room-display" class="guest-room-id">---</span>
-            <button id="copy-room-btn" class="icon-btn small" title="Copy room code">
-                <i class="fas fa-copy"></i>
-            </button>
-        </div>
-
         <!-- Bottom Toolbar (auto-hide via CSS/JS) -->
         <footer id="toolbar" class="toolbar">
             <div class="toolbar-left">
@@ -132,7 +123,7 @@
             </div>
         </footer>
 
-        <!-- HOST PANEL -->
+        <!-- HOST PANEL: Sources & Devices -->
         <aside id="host-panel" class="host-panel hidden">
             <div class="panel-header">
                 <h3>
@@ -157,7 +148,7 @@
             </div>
         </aside>
 
-        <!-- SETTINGS PANEL -->
+        <!-- SETTINGS PANEL (room code moved here) -->
         <aside id="settings-panel" class="settings-panel hidden">
             <div class="settings-header">
                 <h3><i class="fas fa-sliders-h"></i> Settings</h3>
@@ -207,6 +198,20 @@
                         <input type="color" id="set-bg-color" />
                     </div>
                 </div>
+
+                <!-- Room code moved here -->
+                <div class="settings-group">
+                    <h4>Session</h4>
+                    <div class="settings-row room-code-row">
+                        <span>Room code</span>
+                        <div class="room-code-display">
+                            <span id="host-room-display" class="guest-room-id">---</span>
+                            <button id="copy-room-btn" class="icon-btn small" title="Copy room code">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </aside>
     </section>
@@ -232,7 +237,7 @@
                     <div class="guest-options">
                         <button id="share-camera-btn" class="guest-option-btn">
                             <i class="fas fa-video"></i>
-                            <span>Share Camera</span>
+                            <span>Front Camera</span>
                         </button>
                         <button id="share-window-btn" class="guest-option-btn">
                             <i class="fas fa-camera-rotate"></i>

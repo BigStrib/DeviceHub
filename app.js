@@ -371,6 +371,11 @@ const VideoBox = {
 
         box.querySelectorAll('.resize-handle').forEach(handle => {
             const startResize = e => {
+                // If aspect ratio is locked and this is an edge handle, ignore (corners only)
+                if (State.settings.lockRatio && handle.classList.contains('edge')) {
+                    return;
+                }
+
                 e.preventDefault();
                 e.stopPropagation();
                 this.activate(id);
@@ -463,49 +468,65 @@ const VideoBox = {
         const dx = p.x - int.startX;
         const dy = p.y - int.startY;
 
-        let { origLeft: left, origTop: top, origW: w, origH: h, ratio, dir, canvasRect } = int;
+        let { origLeft, origTop, origW, origH, ratio, dir, canvasRect } = int;
+        let left = origLeft;
+        let top  = origTop;
+        let w    = origW;
+        let h    = origH;
         const minW = CONFIG.minSize.width;
         const minH = CONFIG.minSize.height;
         const lock = State.settings.lockRatio;
 
         switch (dir) {
             case 'se':
-                w = Math.max(minW, int.origW + dx);
-                h = lock ? w / ratio : Math.max(minH, int.origH + dy);
+                w = Math.max(minW, origW + dx);
+                if (lock) h = w / ratio;
+                else h = Math.max(minH, origH + dy);
                 break;
             case 'sw':
-                w = Math.max(minW, int.origW - dx);
-                left = int.origLeft + int.origW - w;
-                h = lock ? w / ratio : Math.max(minH, int.origH + dy);
+                w = Math.max(minW, origW - dx);
+                left = origLeft + origW - w;
+                if (lock) h = w / ratio;
+                else h = Math.max(minH, origH + dy);
                 break;
             case 'ne':
-                w = Math.max(minW, int.origW + dx);
-                h = lock ? w / ratio : Math.max(minH, int.origH - dy);
-                top = int.origTop + int.origH - h;
+                w = Math.max(minW, origW + dx);
+                if (lock) h = w / ratio;
+                else h = Math.max(minH, origH - dy);
+                top = origTop + origH - h;
                 break;
             case 'nw':
-                w = Math.max(minW, int.origW - dx);
-                left = int.origLeft + int.origW - w;
-                h = lock ? w / ratio : Math.max(minH, int.origH - dy);
-                top = int.origTop + int.origH - h;
+                w = Math.max(minW, origW - dx);
+                left = origLeft + origW - w;
+                if (lock) h = w / ratio;
+                else h = Math.max(minH, origH - dy);
+                top = origTop + origH - h;
                 break;
             case 'e':
-                w = Math.max(minW, int.origW + dx);
-                if (lock) h = w / ratio;
+                w = Math.max(minW, origW + dx);
+                if (lock) {
+                    h = w / ratio;
+                }
                 break;
             case 'w':
-                w = Math.max(minW, int.origW - dx);
-                left = int.origLeft + int.origW - w;
-                if (lock) h = w / ratio;
+                w = Math.max(minW, origW - dx);
+                left = origLeft + origW - w;
+                if (lock) {
+                    h = w / ratio;
+                }
                 break;
             case 's':
-                h = Math.max(minH, int.origH + dy);
-                if (lock) w = h * ratio;
+                h = Math.max(minH, origH + dy);
+                if (lock) {
+                    w = h * ratio;
+                }
                 break;
             case 'n':
-                h = Math.max(minH, int.origH - dy);
-                top = int.origTop + int.origH - h;
-                if (lock) w = h * ratio;
+                h = Math.max(minH, origH - dy);
+                top = origTop + origH - h;
+                if (lock) {
+                    w = h * ratio;
+                }
                 break;
         }
 
@@ -551,7 +572,6 @@ const VideoBox = {
         const data = State.videoBoxes.get(id);
         if (!data) return;
 
-        // If this tile is host's own camera or window, stop the stream
         if (data.hostType === 'host-camera' || data.hostType === 'host-window') {
             if (data.stream) {
                 data.stream.getTracks().forEach(t => t.stop());
@@ -754,16 +774,13 @@ const ConnectionManager = {
         const src = State.pendingSources.get(sourceId);
         if (!src) return;
 
-        // Remove any tiles using this source
         State.videoBoxes.forEach((box, boxId) => {
             if (box.sourceId === sourceId) VideoBox.remove(boxId);
         });
 
-        // Close call, stop stream
         try { src.call?.close(); } catch {}
         if (src.stream) src.stream.getTracks().forEach(t => t.stop());
 
-        // Tell guest that host removed this source
         this.sendToGuest(src.peerId, {
             type: 'host-remove-source',
             sourceId
@@ -940,7 +957,6 @@ const GuestUI = {
 
         const frontBtn = $('share-camera-btn');
         const backBtn  = $('share-window-btn'); // back camera only
-        const bothBtn  = null; // removed
 
         if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
             backBtn.style.display = 'none';
@@ -1123,7 +1139,6 @@ const LoginUI = {
         hostInput.oninput  = () => format(hostInput);
         guestInput.oninput = () => format(guestInput);
 
-        // Enter to create/join
         hostInput.addEventListener('keydown', e => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1347,7 +1362,6 @@ function init() {
     bindGlobalPanelClose();
     InactivityUI.init();
 
-    // Pre-fill join from URL if ?room= present
     const params = new URLSearchParams(location.search);
     const roomParam = params.get('room');
     if (roomParam) {
