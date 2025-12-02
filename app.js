@@ -160,7 +160,7 @@ const Media = {
     },
     async getWindow() {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-            Toast.warning('Window/screen sharing not supported on this device');
+            Toast.warning('Screen sharing not supported on this device');
             return null;
         }
         try {
@@ -171,7 +171,7 @@ const Media = {
         } catch (err) {
             if (err.name !== 'AbortError') {
                 console.error('Display error:', err);
-                Toast.error('Cannot share window');
+                Toast.error('Cannot share screen/window');
             }
             return null;
         }
@@ -285,7 +285,7 @@ const VideoBox = {
         video.srcObject = stream;
 
         // For host window sharing, show entire captured screen without cropping
-        if (opts.hostType === 'host-window') {
+        if (opts.hostType === 'host-window' || opts.hostType === 'screen') {
             video.style.objectFit = 'contain';
         }
 
@@ -309,7 +309,7 @@ const VideoBox = {
             stream,
             sourceId: opts.sourceId || null,
             peerId: opts.peerId || null,
-            hostType: opts.hostType || null   // 'host-camera' or 'host-window'
+            hostType: opts.hostType || null   // 'host-camera', 'host-window'
         });
 
         this.bindEvents(box, id);
@@ -769,7 +769,6 @@ const ConnectionManager = {
         setTimeout(() => this.removePeer(peerId), 300);
     },
 
-    // Host fully removes/rejects a source
     removeSource(sourceId) {
         const src = State.pendingSources.get(sourceId);
         if (!src) return;
@@ -836,22 +835,23 @@ const HostPanelUI = {
                 <div class="empty-state">
                     <i class="fas fa-video-slash"></i>
                     <p>No sources available</p>
-                    <span>Ask devices to join and share camera.</span>
+                    <span>Ask devices to join and share camera or screen.</span>
                 </div>`;
             return;
         }
         cont.innerHTML = '';
         State.pendingSources.forEach((src, id) => {
             const displayed = [...State.videoBoxes.values()].some(b => b.sourceId === id);
+            const isScreen = src.type === 'screen';
             const card = document.createElement('div');
             card.className = 'source-card';
             card.innerHTML = `
                 <div class="source-card-header">
                     <div class="source-icon">
-                        <i class="fas fa-video"></i>
+                        <i class="fas ${isScreen ? 'fa-desktop' : 'fa-video'}"></i>
                     </div>
                     <div class="source-info">
-                        <div class="source-name">Camera</div>
+                        <div class="source-name">${isScreen ? 'Screen' : 'Camera'}</div>
                         <div class="source-device">
                             <i class="fas ${src.deviceInfo?.icon || 'fa-desktop'}"></i>
                             ${src.deviceInfo?.type || 'Device'}
@@ -885,8 +885,8 @@ const HostPanelUI = {
                     const sid = btn.dataset.id;
                     if (act === 'display') {
                         VideoBox.create(src.stream, {
-                            label: `${src.deviceInfo?.type || 'Device'} - Camera`,
-                            icon: 'fa-video',
+                            label: `${src.deviceInfo?.type || 'Device'} - ${isScreen ? 'Screen' : 'Camera'}`,
+                            icon: isScreen ? 'fa-desktop' : 'fa-video',
                             sourceId: sid,
                             peerId: src.peerId
                         });
@@ -955,14 +955,23 @@ const GuestUI = {
         $('guest-screen').classList.remove('hidden');
         $('guest-room-code').textContent = Utils.formatRoomId(State.roomId);
 
-        const frontBtn = $('share-camera-btn');
-        const backBtn  = $('share-window-btn'); // back camera only
+        const frontBtn  = $('share-camera-btn');
+        const backBtn   = $('share-window-btn');
+        const screenBtn = $('share-screen-btn');
 
-        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-            backBtn.style.display = 'none';
+        if (!navigator.mediaDevices) {
+            backBtn.style.display  = 'none';
+            screenBtn.style.display = 'none';
             frontBtn.innerHTML = '<i class="fas fa-video"></i><span>Share Camera</span>';
             frontBtn.onclick = () => this.shareCamera('any');
             return;
+        }
+
+        // Screen share availability
+        if (!navigator.mediaDevices.getDisplayMedia) {
+            screenBtn.style.display = 'none';
+        } else {
+            screenBtn.onclick = () => this.shareScreen();
         }
 
         Media.enumerateDevices().then(devs => {
@@ -998,10 +1007,12 @@ const GuestUI = {
             }
         }).catch(() => {
             backBtn.style.display  = 'none';
+            screenBtn.style.display = 'none';
             frontBtn.innerHTML = '<i class="fas fa-video"></i><span>Share Camera</span>';
             frontBtn.onclick = () => this.shareCamera('any');
         });
     },
+
     setConnecting() {
         $('guest-status').classList.remove('hidden');
         $('guest-status').innerHTML = `
@@ -1010,10 +1021,12 @@ const GuestUI = {
         `;
         $('guest-controls').classList.add('hidden');
     },
+
     setConnected() {
         $('guest-status').classList.add('hidden');
         $('guest-controls').classList.remove('hidden');
     },
+
     setError(msg) {
         $('guest-status').classList.remove('hidden');
         $('guest-status').innerHTML = `
@@ -1022,6 +1035,7 @@ const GuestUI = {
         `;
         $('guest-controls').classList.add('hidden');
     },
+
     async shareCamera(facing) {
         const existsSame = [...State.localSources.values()].some(
             s => s.type === 'camera' && (s.facing || 'any') === (facing || 'any')
@@ -1058,15 +1072,8 @@ const GuestUI = {
             metadata: { sourceId, type: 'camera', deviceInfo: Utils.deviceInfo() }
         });
 
-        ConnectionManager.sendToHost({
-            type: 'guest-info',
-            deviceInfo: Utils.deviceInfo()
-        });
-        ConnectionManager.sendToHost({
-            type: 'source-submitted',
-            sourceId,
-            sourceType: 'camera'
-        });
+        ConnectionManager.sendToHost({ type: 'guest-info', deviceInfo: Utils.deviceInfo() });
+        ConnectionManager.sendToHost({ type: 'source-submitted', sourceId, sourceType: 'camera' });
 
         stream.getTracks().forEach(t => {
             t.onended = () => this.stop(sourceId);
@@ -1075,6 +1082,41 @@ const GuestUI = {
         this.render();
         Toast.success(`${facing === 'back' ? 'Back' : facing === 'front' ? 'Front' : 'Camera'} shared`);
     },
+
+    async shareScreen() {
+        const existsScreen = [...State.localSources.values()].some(s => s.type === 'screen');
+        if (existsScreen) {
+            Toast.warning('Screen already shared');
+            return;
+        }
+
+        const stream = await Media.getWindow();
+        if (!stream) return;
+
+        const sourceId = 'SRC-' + Utils.genId(6);
+        State.localSources.set(sourceId, {
+            stream,
+            type: 'screen',
+            facing: 'screen',
+            status: 'pending'
+        });
+
+        const hostId = Utils.roomToPeerId(State.roomId);
+        State.peer.call(hostId, stream, {
+            metadata: { sourceId, type: 'screen', deviceInfo: Utils.deviceInfo() }
+        });
+
+        ConnectionManager.sendToHost({ type: 'guest-info', deviceInfo: Utils.deviceInfo() });
+        ConnectionManager.sendToHost({ type: 'source-submitted', sourceId, sourceType: 'screen' });
+
+        stream.getTracks().forEach(t => {
+            t.onended = () => this.stop(sourceId);
+        });
+
+        this.render();
+        Toast.success('Screen shared');
+    },
+
     stop(sourceId) {
         const src = State.localSources.get(sourceId);
         if (!src) return;
@@ -1083,16 +1125,20 @@ const GuestUI = {
         State.localSources.delete(sourceId);
         this.render();
     },
+
     render() {
         const cont = $('guest-my-sources');
         if (!cont) return;
         cont.innerHTML = '';
         if (State.localSources.size === 0) return;
+
         const title = document.createElement('div');
         title.className = 'my-sources-title';
         title.textContent = 'Your shared sources';
         cont.appendChild(title);
+
         State.localSources.forEach((s, id) => {
+            const isScreen = s.type === 'screen';
             const div = document.createElement('div');
             div.className = 'my-source';
             div.innerHTML = `
@@ -1101,7 +1147,13 @@ const GuestUI = {
                 </div>
                 <div class="my-source-info">
                     <div class="my-source-name">
-                        ${s.facing === 'back' ? 'Back Camera' : s.facing === 'front' ? 'Front Camera' : 'Camera'}
+                        ${isScreen
+                            ? 'Screen'
+                            : s.facing === 'back'
+                                ? 'Back Camera'
+                                : s.facing === 'front'
+                                    ? 'Front Camera'
+                                    : 'Camera'}
                     </div>
                     <div class="my-source-status ${s.status === 'live' ? 'live' : ''}">
                         ${s.status === 'live'

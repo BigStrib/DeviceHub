@@ -60,7 +60,7 @@
                 <!-- Guest Column -->
                 <div class="login-col">
                     <h2>Join</h2>
-                    <p>On your phone or laptop, join the room and share your camera.</p>
+                    <p>On your phone or laptop, join the room and share your camera or screen.</p>
 
                     <label class="login-label">Room Code</label>
                     <input
@@ -89,7 +89,7 @@
             <div id="canvas" class="canvas"></div>
         </main>
 
-        <!-- Bottom Toolbar (auto-hide via CSS/JS) -->
+        <!-- Bottom Toolbar -->
         <footer id="toolbar" class="toolbar">
             <div class="toolbar-left">
                 <button id="open-host-panel-btn" class="toolbar-btn">
@@ -148,7 +148,7 @@
             </div>
         </aside>
 
-        <!-- SETTINGS PANEL (room code moved here) -->
+        <!-- SETTINGS PANEL (room code in settings) -->
         <aside id="settings-panel" class="settings-panel hidden">
             <div class="settings-header">
                 <h3><i class="fas fa-sliders-h"></i> Settings</h3>
@@ -199,7 +199,7 @@
                     </div>
                 </div>
 
-                <!-- Room code moved here -->
+                <!-- Room code here -->
                 <div class="settings-group">
                     <h4>Session</h4>
                     <div class="settings-row room-code-row">
@@ -221,7 +221,7 @@
         <div class="guest-card">
             <div class="guest-header">
                 <h2>Connected to Room</h2>
-                <p>Your camera goes only to the host. You can see what you share here.</p>
+                <p>Your camera or screen goes only to the host. You can see what you share here.</p>
                 <div class="guest-room-info">
                     <i class="fas fa-check-circle"></i>
                     <span>Room:</span>
@@ -242,6 +242,10 @@
                         <button id="share-window-btn" class="guest-option-btn">
                             <i class="fas fa-camera-rotate"></i>
                             <span>Back Camera</span>
+                        </button>
+                        <button id="share-screen-btn" class="guest-option-btn">
+                            <i class="fas fa-desktop"></i>
+                            <span>Share Screen</span>
                         </button>
                     </div>
 

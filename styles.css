@@ -490,7 +490,7 @@ body.ui-hidden .settings-panel:not(.hidden) {
     font-size: 11px;
 }
 
-/* Source card - more compact */
+/* Source card: compact thumbnail, full content (contain) */
 .source-card {
     background: var(--surface-hover);
     border-radius: var(--radius);
@@ -549,7 +549,8 @@ body.ui-hidden .settings-panel:not(.hidden) {
 .source-preview video {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain; /* full content visible */
+    background: #000;
 }
 
 .source-actions {
@@ -846,7 +847,7 @@ body.ui-hidden .settings-panel:not(.hidden) {
 
 .guest-options {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
     gap: 8px;
     margin-bottom: 12px;
 }
@@ -886,7 +887,7 @@ body.ui-hidden .settings-panel:not(.hidden) {
     margin-top: 6px;
 }
 
-/* Guest source preview */
+/* Guest source preview - larger and full (contain) */
 .my-sources-title {
     font-size: 11px;
     text-transform: uppercase;
@@ -900,11 +901,11 @@ body.ui-hidden .settings-panel:not(.hidden) {
     border-radius: var(--radius);
     padding: 8px 10px;
     display: grid;
-    grid-template-columns: 70px 1fr auto;
+    grid-template-columns: 1fr auto;
     grid-template-rows: auto auto;
     grid-template-areas:
-        "video info btn"
-        "video info btn";
+        "video video"
+        "info  btn";
     gap: 6px;
     margin-bottom: 6px;
     align-items: center;
@@ -912,8 +913,8 @@ body.ui-hidden .settings-panel:not(.hidden) {
 
 .my-source-video {
     grid-area: video;
-    width: 70px;
-    height: 48px;
+    width: 100%;
+    height: 170px;
     border-radius: 6px;
     overflow: hidden;
     background: #000;
@@ -922,7 +923,8 @@ body.ui-hidden .settings-panel:not(.hidden) {
 .my-source-video video {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain; /* full view of what they share */
+    background: #000;
 }
 
 .my-source-info {
@@ -943,15 +945,15 @@ body.ui-hidden .settings-panel:not(.hidden) {
 
 .my-source-stop {
     grid-area: btn;
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     border-radius: 999px;
     background: var(--danger);
     color: #fff;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 11px;
     transition: all var(--transition);
 }
 
